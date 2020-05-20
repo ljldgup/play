@@ -1,0 +1,140 @@
+1p 人物  108171
+1p 动作  108172 + 108173
+1p血量   108239  死亡血量变成负数，把血量后面两位设置为d可以无限血
+1p能量   1082E3
+1p x坐标 108118 + 108119
+1p y坐标 108121
+1p 连招1084ce
+
+2p 人物  108371
+2p 动作  108372 + 108373
+2p 血量  108439
+2p 能量   1084E3
+2p x坐标 108318 + 108319
+2p y坐标 108321
+2p 连招1082ce
+
+时间     10A83A
+1=时间停止v1,100001,04
+2=时间停止v2,10A83A,2F
+
+连击数
+1=启动P1,1084B1,00
+2=启动P2,1082B1,00
+
+
+时间后面5位 改成FF 能让时间停止
+
+人物间距离 1081BD
+
+家用机改投币
+10A816,99,10A817,99
+
+1085d4对战时间FFFF, 非对战时间0000
+
+
+mame 调试将0x100000设置01，然后按住投币键5，按a，b，c，d进行调试
+act code 0x100-0x1cc是挨打或者挑衅开场结束一类，这种无需进行预测，直接防守即可
+0x100-0x118 被攻击后摇
+
+0x47 晕眩
+
+0xb8 开始是必杀
+0x11b-0x14b 被攻击倒地
+0x172-0x1cc 一般是特殊技能，必杀技的挨打效果
+0-0x50 都是防守跳跃等非攻击动作
+0x50-0x100是攻击动作
+
+Walkthrough
+
+Let’s first run MAME in a terminal to reach the LUA console:
+
+$ mame -console YOUR_ROM
+     _/      _/    _/_/    _/      _/  _/_/_/_/
+   _/_/  _/_/  _/    _/  _/_/  _/_/  _/
+  _/  _/  _/  _/_/_/_/  _/  _/  _/  _/_/_/
+ _/      _/  _/    _/  _/      _/  _/
+_/      _/  _/    _/  _/      _/  _/_/_/_/
+mame v0.217
+Copyright (C) Nicola Salmoria and the MAME team
+
+Lua 5.3
+Copyright (C) Lua.org, PUC-Rio
+
+[MAME]>
+
+At this point, your game is probably running in demo mode, let’s pause it:
+
+[MAME]> emu.pause()
+[MAME]>
+
+Even without textual feedback on the console, you’ll notice the game is now paused. In general, commands are quiet and only print back error messages.
+
+You can check at runtime which version of MAME you are running, with:
+
+[MAME]> print(emu.app_name() .. " " .. emu.app_version())
+mame 0.217
+
+We now start exploring screen related methods. First, let’s enumerate available screens:
+
+[MAME]> for i,v in pairs(manager:machine().screens) do print(i) end
+:screen
+
+manager:machine() is the root object of your currently running machine: we will be using this often. screens is a table with all available screens; most machines only have one main screen. In our case, the main and only screen is tagged as :screen, and we can further inspect it:
+
+[MAME]> -- let's define a shorthand for the main screen
+[MAME]> s = manager:machine().screens[":screen"]
+[MAME]> print(s:width() .. "x" .. s:height())
+320x224
+
+We have several methods to draw on the screen a HUD composed of lines, boxes and text:
+
+[MAME]> -- we define a HUD-drawing function, and then call it
+[MAME]> function draw_hud()
+[MAME]>> s:draw_text(40, 40, "foo"); -- (x0, y0, msg)
+[MAME]>> s:draw_box(20, 20, 80, 80, 0, 0xff00ffff); -- (x0, y0, x1, y1, fill-color, line-color)
+[MAME]>> s:draw_line(20, 20, 80, 80, 0xff00ffff); -- (x0, y0, x1, y1, line-color)
+[MAME]>> end
+[MAME]> draw_hud();
+
+This will draw some useless art on the screen. However, when unpausing the game, your HUD needs to be refreshed otherwise it will just disappear. In order to do this, you have to register your hook to be called on every frame repaint:
+
+[MAME]> emu.register_frame_done(draw_hud, "frame")
+
+All colors are expected in ARGB format (32b unsigned), while screen origin (0,0) normally corresponds to the top-left corner.
+
+Similarly to screens, you can inspect all the devices attached to a machine:
+
+[MAME]> for k,v in pairs(manager:machine().devices) do print(k) end
+:audiocpu
+:maincpu
+:saveram
+:screen
+:palette
+[...]
+
+On some of them, you can also inspect and manipulate memory and state:
+
+[MAME]> cpu = manager:machine().devices[":maincpu"]
+[MAME]> -- enumerate, read and write state registers
+[MAME]> for k,v in pairs(cpu.state) do print(k) end
+D5
+SP
+A4
+A3
+D0
+PC
+[...]
+[MAME]> print(cpu.state["D0"].value)
+303
+[MAME]> cpu.state["D0"].value = 255
+[MAME]> print(cpu.state["D0"].value)
+255
+
+[MAME]> -- inspect memory
+[MAME]> for k,v in pairs(cpu.spaces) do print(k) end
+program
+[MAME]> mem = cpu.spaces["program"]
+[MAME]> print(mem:read_i8(0xC000))
+41
+

@@ -1,0 +1,1834 @@
+<!-- 编辑使用 XMLSpy v2006 U (http://www.altova.com) 由 any (any) -->
+<!-- 编辑使用 XMLSpy v2006 U (http://www.altova.com) 由 any (any) -->
+<!-- 编辑使用 XMLSpy v2006 U (http://www.altova.com) 由 any (any) -->
+<!-- 编辑使用 XMLSpy v2006 U (http://www.altova.com) 由 any (any) -->
+<!-- 编辑使用 XMLSpy v2006 U (http://www.altova.com) 由 any (any) -->
+<!-- 编辑使用 XMLSpy v2006 U (http://www.altova.com) 由 any (any) -->
+<!-- 编辑使用 XMLSpy v2006 U (http://www.altova.com) 由 any (any) -->
+<!-- 编辑使用 XMLSpy v2006 U (http://www.altova.com) 由 any (any) -->
+<mamecheat version="1">
+	<cheat desc="拳皇97超强力金手指第17版"/>
+	<cheat desc="goldlion 2011贺岁作品"/>
+	<cheat desc="允许自由传播，请勿删除作者信息"/>
+	<cheat desc=" "/>
+	<cheat desc="系统"/>
+	<cheat desc="防死机TASKOVER">
+		<comment>有部分选项会造成死机TASKOVER，尤其是加速，请务必开启这个选项，能够有效防止TASKOVER</comment>
+		<script state="run">
+			<action>maincpu.rb@30B8=5A</action>
+		</script>
+	</cheat>
+	<cheat desc="选择街机/家用机模式">
+		<comment>和'跳过RAM/ROM检查'一起使用才能达到最佳效果,然后启用它和复位.家机（NEOGEO）设置可能开放游戏的其他方面，它甚至是可能使游戏无法播放。</comment>
+		<parameter>
+			<item value="0x80">街机 (MVS)</item>
+			<item value="0x00">家机 (NEOGEO)</item>
+		</parameter>
+		<script state="run">
+			<action>maincpu.pb@10FD82=param</action>
+		</script>
+	</cheat>
+	<cheat desc="跳过RAM/ROM检查">
+		<comment>在没有绿色屏幕上可以更快地启动,最好是使用前一起启用</comment>
+		<script state="on">
+			<action>temp0 =maincpu.rd@C1315C</action>
+			<action>temp1 =maincpu.rd@C1314E</action>
+			<action>temp2 =maincpu.rd@C131E8</action>
+			<action>temp3 =maincpu.rd@C13184</action>
+			<action>temp4 =maincpu.rd@C1212E</action>
+			<action>temp5 =maincpu.rd@C134FA</action>
+		</script>
+		<script state="run">
+			<action condition="(maincpu.rd@C1315C==51CFFFF2)">maincpu.rd@C1315C=6000EB08</action>
+			<!-- Euro + Japan-S2 BIOSs -->
+			<action condition="(maincpu.rd@C1314E==51CFFFF2)">maincpu.rd@C1314E=6000EB16</action>
+			<!-- Euro-S1 + Japan-S1 BIOSs -->
+			<action condition="(maincpu.rd@C131E8==51CFFFF2)">maincpu.rd@C131E8=6000EA52</action>
+			<!-- US BIOS -->
+			<action condition="(maincpu.rd@C13184==51CFFFF2)">maincpu.rd@C13184=6000EAB6</action>
+			<!-- US-E BIOS -->
+			<action condition="(maincpu.rd@C1212E==51CFFFF2)">maincpu.rd@C1212E=6000EB36</action>
+			<!-- Asia BIOS -->
+			<action condition="(maincpu.rd@C134FA==51CFFFF2)">maincpu.rd@C134FA=6000E892</action>
+			<!-- Japan BIOS -->
+		</script>
+		<script state="off">
+			<action>maincpu.rd@C1315C=temp0 </action>
+			<action>maincpu.rd@C1314E=temp1 </action>
+			<action>maincpu.rd@C131E8=temp2 </action>
+			<action>maincpu.rd@C13184=temp3 </action>
+			<action>maincpu.rd@C1212E=temp4 </action>
+			<action>maincpu.rd@C134FA=temp5 </action>
+		</script>
+	</cheat>
+	<cheat desc="投币数锁定为99">
+		<script state="run">
+			<action>maincpu.pb@10A817=99</action>
+			<action>maincpu.pb@10A816=99</action>
+		</script>
+	</cheat>
+	<cheat desc="战斗时间锁定为60">
+		<script state="on">
+			<action>temp0 =maincpu.pb@10A83A</action>
+		</script>
+		<script state="run">
+			<action condition="(frame % 120 == 0) AND (maincpu.pb@10A83A!=temp0 )">maincpu.pb@10A83A=60</action>
+		</script>
+	</cheat>
+	<cheat desc="立即结束本回合">
+		<script state="on">
+			<action>maincpu.pb@10A83A=0</action>
+		</script>
+	</cheat>
+	<cheat desc="开启隐藏人物">
+		<comment>在角色选择画面中加入角色暴走八神庵,暴走莉安娜,大蛇队</comment>
+		<parameter>
+			<item value="0x0E">大蛇队</item>
+			<item value="0x01">暴走八神庵</item>
+			<item value="0x10">暴走莉安娜</item>
+			<item value="0x11">暴走八神庵、暴走莉安娜</item>
+			<item value="0x1F">暴走八神庵、暴走莉安娜、大蛇队</item>
+		</parameter>
+		<script state="run">
+			<action>maincpu.pb@10EC34=param</action>
+		</script>
+	</cheat>
+	<cheat desc="开启大蛇">
+		<comment>会有副作用，造成八神不可选，如配合开启五个隐藏人物，则真吾不可选</comment>
+		<script state="run">
+			<action>maincpu.rb@A9498=1E</action>
+			<action>maincpu.rb@A94C7=1E</action>
+			<action>maincpu.rb@A94F2=1E</action>
+			<action>maincpu.rb@A9521=1E</action>
+			<action>maincpu.rb@A954C=1E</action>
+			<action>maincpu.rb@A957B=1E</action>
+			<action>maincpu.rb@A95A6=1E</action>
+			<action>maincpu.rb@A95D5=1E</action>
+			<!--
+		
+			<action>maincpu.mb@A92FC=1C</action>
+			<action>maincpu.mb@A9300=1D</action>
+			<action>maincpu.mb@A9304=1E</action>
+			<action>maincpu.mb@A9308=1F</action>
+			<action>maincpu.mb@A930C=15</action>
+			<action>maincpu.mb@A9310=16</action>
+			<action>maincpu.mb@A9314=17</action>
+			-->
+			<!--
+			<action>maincpu.mw@EDB=1E17</action>
+			<action>maincpu.mw@11F5=1E17</action>
+			<action>maincpu.mw@EFD6=0608</action>
+			<action>maincpu.mw@EFDC=0608</action>
+			<action>maincpu.mw@25162=F400</action>
+			<action>maincpu.mw@25163=3103</action>
+			<action>maincpu.mw@2516A=F400</action>
+			<action>maincpu.mw@2516B=3103</action>
+			<action>maincpu.mw@9972=2D6D</action>
+			<action>maincpu.mw@9976=2D71</action>
+			<action>maincpu.mw@9977=424E</action>
+			<action>maincpu.mw@9978=EF7C</action>
+			<action>maincpu.mw@9979=271B</action>
+			<action>maincpu.mw@997A=2D1F</action>
+			<action>maincpu.mw@997B=4200</action>	
+			-->
+		</script>
+	</cheat>
+	<cheat desc="开启隐藏人物＋时间停止">
+		<comment>调试 Dip 1-3,不能在大蛇上开启</comment>
+		<script state="on">
+			<action>temp0 =maincpu.pb@100000</action>
+		</script>
+		<script state="run">
+			<action>maincpu.pb@100000=04|(maincpu.pb@100000 BAND ~04)</action>
+		</script>
+		<script state="off">
+			<action>maincpu.pb@100000=temp0 </action>
+		</script>
+	</cheat>
+	<cheat desc="选择难度">
+		<parameter>
+			<item value="0x00">初学者</item>
+			<item value="0x01">简单</item>
+			<item value="0x02">正常</item>
+			<item value="0x03">MVS</item>
+			<item value="0x04">困难</item>
+			<item value="0x05">非常困难</item>
+			<item value="0x06">最困难</item>
+			<item value="0x07">专家</item>
+		</parameter>
+		<script state="run">
+			<action>maincpu.pb@10FD8F=param</action>
+			<action>maincpu.pb@10DBA1=param</action>
+		</script>
+	</cheat>
+	<cheat desc="选择背景">
+		<parameter>
+			<item value="0x00">日本，甲子园球场</item>
+			<item value="0x01">美国，探险世界</item>
+			<item value="0x02">巴厘，Tuban</item>
+			<item value="0x03">香港，九龙</item>
+			<item value="0x04">韩国，京博克公</item>
+			<item value="0x05">摩纳哥，Ruccass Corner</item>
+			<item value="0x06">大蛇队</item>
+			<item value="0x07">大蛇</item>
+		</parameter>
+		<script state="run">
+			<action>maincpu.pb@10A7EA=param</action>
+		</script>
+	</cheat>
+	<cheat desc="选择关卡">
+		<comment>不能锁定，用后立即解锁</comment>
+		<parameter>
+			<item value="0x00">第一队选手</item>
+			<item value="0x01">第二队选手</item>
+			<item value="0x02">第三队选手</item>
+			<item value="0x03">第四队选手</item>
+			<item value="0x04">第五队选手</item>
+			<item value="0x05">第六队选手</item>
+			<item value="0x06">血之暴走</item>
+			<item value="0x07">大蛇队</item>
+			<item value="0x08">大蛇</item>
+			<item value="0x09">八神（附加战斗）</item>
+		</parameter>
+		<script state="run">
+			<action condition="param==0">maincpu.pb@10A798=0</action>
+			<action condition="param==1">maincpu.pb@10A798=8</action>
+			<action condition="param==2">maincpu.pb@10A798=9</action>
+			<action condition="param==3">maincpu.pb@10A798=19</action>
+			<action condition="param==4">maincpu.pb@10A798=39</action>
+			<action condition="param==5">maincpu.pb@10A798=3D</action>
+			<action condition="param==6">maincpu.pb@10A798=3F</action>
+			<action condition="param==7">maincpu.pb@10A798=3F</action>
+			<action condition="param==7">maincpu.pb@10A799=10</action>
+			<action condition="param==8">maincpu.pb@10A798=3F</action>
+			<action condition="param==8">maincpu.pb@10A799=30</action>
+			<action condition="param==9">maincpu.pb@10ED5F=9</action>
+		</script>
+	</cheat>
+	<cheat desc="选择结局动画">
+		<parameter>
+			<item value="0x00">主人公队</item>
+			<item value="0x01">饿狼传说队</item>
+			<item value="0x02">龙虎之拳队</item>
+			<item value="0x03">怒之队</item>
+			<item value="0x04">超能力队</item>
+			<item value="0x05">女性格斗家队</item>
+			<item value="0x06">韩国队</item>
+			<item value="0x07">大蛇队</item>
+			<item value="0x08">特别队</item>
+			<item value="0x0D">真大蛇队</item>
+			<item value="0x09">三神器队（神乐+草薙+八神）</item>
+			<item value="0x0A">草薙+真吾+除八神和莉安娜任意人物</item>
+			<item value="0x84">三英雄队（草薙+特瑞+坂崎良）</item>
+			<item value="0x85">'95女性格斗家队（不知火舞+尤丽+京）</item>
+			<item value="0x86">克拉克+拉尔夫+雅典娜</item>
+			<item value="0x87">东丈+二阶+金加藩</item>
+			<item value="0x88">东丈+玛丽+特瑞</item>
+			<item value="0x89">动物园队（陈国汉+山崎龙二+蔡宝健）</item>
+			<item value="0x8A">草薙+比利+不知火舞</item>
+		</parameter>
+		<script state="run">
+			<action>maincpu.pb@10a848=param</action>
+			<action>maincpu.pb@10a857=param</action>
+		</script>
+	</cheat>
+	<cheat desc="屏蔽背景画面">
+		<script state="run">
+			<action>maincpu.pb@10A788=80</action>
+		</script>
+		<script state="off">
+			<action>maincpu.pb@10A788=0</action>
+		</script>
+	</cheat>
+	<cheat desc="屏蔽背景音乐">
+		<script state="run">
+			<action>audiocpu.pb@FDE0=00</action>
+		</script>
+	</cheat>
+	<cheat desc="开启血色背景">
+		<comment>让背景变成红色(变成遇到暴走八神庵或者暴走莉安娜时的红色背景)</comment>
+		<script state="run">
+			<action>maincpu.pb@10EC35=01</action>
+		</script>
+	</cheat>
+	<cheat desc="随时呼叫援护">
+		<comment>跳过所有判断条件，直接呼叫援护攻击</comment>
+		<script state="run">
+			<action>maincpu.rw@2A4BE=664A</action>
+		</script>
+	</cheat>
+	<cheat desc="防御时无损害">
+		<comment>玩家都有影响,当防御时所有进攻都不能伤害,因此,玩家得不到防御伤害</comment>
+		<script state="on">
+			<action>temp0 =maincpu.mb@01436E</action>
+			<action>temp1 =maincpu.mb@014377</action>
+		</script>
+		<script state="run">
+			<action>maincpu.mb@01436E=EC</action>
+			<action>maincpu.mb@014377=00</action>
+		</script>
+		<script state="off">
+			<action>maincpu.mb@01436E=temp0 </action>
+			<action>maincpu.mb@014377=temp1 </action>
+		</script>
+	</cheat>
+	<cheat desc="P1控制方式">
+		<parameter>
+			<item value="0x00">人脑</item>
+			<item value="0x80">电脑</item>
+		</parameter>
+		<script state="run">
+			<action>maincpu.pb@108270=param</action>
+		</script>
+	</cheat>
+	<cheat desc="P2控制方式">
+		<parameter>
+			<item value="0x01">人脑</item>
+			<item value="0x80">电脑</item>
+		</parameter>
+		<script state="run">
+			<action>maincpu.pb@108470=param</action>
+		</script>
+	</cheat>
+	<cheat desc="出场阵容隐藏">
+		<comment>在选择出场阵容时，让角色隐藏，双方出场阵容均不可见</comment>
+		<script state="run">
+			<action>maincpu.pb@10B0AA=0</action>
+		</script>
+	</cheat>
+	<cheat desc=" "/>
+	<cheat desc="练习"/>
+	<cheat desc="练习模式启动">
+		<comment>请选择组队对战模式后，再使用这个选项，然后在下面选择子选项支持</comment>
+		<script state="on">
+			<action>temp0 =maincpu.pb@10A83A</action>
+		</script>
+		<script state="run">
+			<action condition="(frame % 120 == 0) AND (maincpu.pb@10A83A!=temp0 )">maincpu.pb@10A83A=60</action>
+			<action>maincpu.pb@10EC34=0x1F</action>
+		</script>
+	</cheat>
+	<cheat desc="体力">
+		<comment>一定时间内恢复，一定要在游戏进入对战画面后，再开启，不然会出现bug。目前还是可以把人打死的，但是下一局重开后，依然会保留当前出场人物。</comment>
+		<parameter>
+			<item value="0">锁为满血</item>
+			<item value="1">一定时间内恢复</item>
+		</parameter>
+		<script state="run">
+			<action condition="(param==0)">maincpu.pb@108239=67</action>
+			<action condition="(param==0)">maincpu.pb@108439=67</action>
+			<action condition="(param==1) AND (frame % 240 == 0)">maincpu.pb@108239=67</action>
+			<action condition="(param==1) AND (frame % 240 == 0)">maincpu.pb@108439=67</action>
+			<action condition="(param==1) AND (frame % 240 == 0)">maincpu.pb@10A84A=0</action>
+			<action condition="(param==1) AND (frame % 240 == 0)">maincpu.pb@10A85B=0</action>
+		</script>
+	</cheat>
+	<cheat desc="能量">
+		<parameter>
+			<item value="0">满能量</item>
+			<item value="1">满能量，爆气后保持在MAX状态，适合练习MAX下的无限连</item>
+			<item value="2">无能量，适合练习鬼步</item>
+		</parameter>
+		<script state="run">
+			<action condition="param==0">maincpu.pb@1082E3=3</action>
+			<action condition="param==0">maincpu.pb@1081E8=0</action>
+			<action condition="param==1">maincpu.pb@1082E3=3</action>
+			<action condition="param==1">maincpu.pb@1081E8=0</action>
+			<action condition="param==1">maincpu.pb@1081EB=40</action>
+			<action condition="param==2">maincpu.pb@1082E3=0</action>
+			<action condition="param==2">maincpu.pb@1081E8=0</action>
+		</script>
+	</cheat>
+	<cheat desc="电脑AI">
+		<parameter>
+			<item value="0">站立挨打</item>
+			<item value="1">只会用普通拳脚</item>
+			<item value="2">对战</item>
+		</parameter>
+		<script state="run">
+			<action condition="param==0">maincpu.pb@108470=1</action>
+			<action condition="param==1">maincpu.pb@108470=81</action>
+			<action condition="param==1">maincpu.pb@1084B2=1</action>
+			<action condition="param==1">maincpu.pb@10833A=33</action>
+			<action condition="param==2">maincpu.pb@108470=81</action>
+		</script>
+	</cheat>
+	<cheat desc="判定框">
+		<script state="run">
+			<action>maincpu.pb@100000=2</action>
+		</script>
+		<script state="off">
+			<action>maincpu.pb@100000=0</action>
+		</script>
+	</cheat>
+	<cheat desc=" "/>
+	<cheat desc="对战"/>
+	<cheat desc="P1体力设置">
+		<parameter>
+			<item value="0x67">满血</item>
+			<item value="0x10">见红</item>
+			<item value="0x01">一打就死</item>
+		</parameter>
+		<script state="run">
+			<action>maincpu.pb@108239=param</action>
+		</script>
+	</cheat>
+	<cheat desc="P1系统">
+		<parameter>
+			<item value="0x00">ADV</item>
+			<item value="0x01">EX</item>
+		</parameter>
+		<script state="run">
+			<action>maincpu.pb@10A849=param</action>
+		</script>
+	</cheat>
+	<cheat desc="P1ADV能量设置">
+		<parameter>
+			<item value="0">满能量</item>
+			<item value="1">满能量，爆气后保持在MAX状态</item>
+			<item value="2">无能量</item>
+			<item value="3">快速蓄能量A型</item>
+			<item value="4">快速蓄能量B型</item>
+		</parameter>
+		<script state="run">
+			<action condition="param==0">maincpu.pb@1082E3=3</action>
+			<action condition="param==0">maincpu.pb@1081E8=0</action>
+			<action condition="param==1">maincpu.pb@1082E3=3</action>
+			<action condition="param==1">maincpu.pb@1081E8=0</action>
+			<action condition="param==1">maincpu.pb@1081EB=40</action>
+			<action condition="param==2">maincpu.pb@1082E3=0</action>
+			<action condition="param==2">maincpu.pb@1081E8=0</action>
+			<action condition="param==3">maincpu.pb@1081E8=7F</action>
+			<action condition="param==4">maincpu.pb@1081E8=80</action>
+		</script>
+	</cheat>
+	<cheat desc="P1EX能量设置">
+		<parameter>
+			<item value="0">满能量</item>
+			<item value="1">无能量</item>
+		</parameter>
+		<script state="run">
+			<action condition="param==0">maincpu.pb@1081E0=10|(maincpu.pb@1081E0 BAND ~10)</action>
+			<action condition="param==0">maincpu.pb@1081E8=81</action>
+			<action condition="param==0">maincpu.pb@1081EA=3F</action>
+			<action condition="param==0">maincpu.pb@10824D=04</action>
+			<action condition="param==1">maincpu.pb@1081E0=0</action>
+			<action condition="param==1">maincpu.pb@1081E8=0</action>
+			<action condition="param==1">maincpu.pb@1081EA=0</action>
+			<action condition="param==1">maincpu.pb@10824D=0</action>
+		</script>
+	</cheat>
+	<cheat desc="P1眩晕值">
+		<parameter>
+			<item value="0x67">打不晕</item>
+			<item value="0x00">一打就晕</item>
+		</parameter>
+		<script state="run">
+			<action>maincpu.pb@10823F=param</action>
+		</script>
+	</cheat>
+	<cheat desc="P1破防值">
+		<parameter>
+			<item value="0x67">不会被破防</item>
+			<item value="0x00">guard crush</item>
+		</parameter>
+		<script state="run">
+			<action>maincpu.pb@108247=param</action>
+		</script>
+	</cheat>
+	<cheat desc="P1移动力">
+		<parameter>
+			<item value="0x00">无法移动</item>
+			<item value="0x03">正常</item>
+			<item value="0x05">暴走</item>
+			<item value="0x09">飞驰</item>
+			<item value="0x2F">狂奔</item>
+			<item value="0xCF">音速</item>
+			<item value="0xFF">光速</item>
+		</parameter>
+		<script state="run">
+			<action>maincpu.pb@10E76F=param</action>
+		</script>
+		<script state="off">
+			<action>maincpu.pb@10E76F=3</action>
+		</script>
+	</cheat>
+	<cheat desc="P1跳跃力">
+		<parameter>
+			<item value="0x7F">正常</item>
+			<item value="0xE0">小跳</item>
+			<item value="0x5F">接近大跳</item>
+			<item value="0x4F">时间栏以下</item>
+			<item value="0x3F">屏幕顶点以下</item>
+			<item value="0x2F">屏幕顶点</item>
+			<item value="0x1F">屏幕顶点以上</item>
+		</parameter>
+		<script state="run">
+			<action>maincpu.pb@10E778=param</action>
+		</script>
+		<script state="off">
+			<action>maincpu.pb@10E778=3</action>
+		</script>
+	</cheat>
+	<cheat desc="P1防御力">
+		<parameter>
+			<item value="0x1E">S级</item>
+			<item value="0x3C">A级</item>
+			<item value="0x5A">B级</item>
+			<item value="0x78">C级</item>
+			<item value="0x96">D级</item>
+			<item value="0xA5">1级：大蛇</item>
+			<item value="0xC1">2级：陈国汉</item>
+			<item value="0xC3">3级：大门</item>
+			<item value="0xC5">4级：坂崎良</item>
+			<item value="0xC7">5级：拉尔夫</item>
+			<item value="0xC9">6级：八神</item>
+			<item value="0xCC">7级：草薙|KING|七枷社</item>
+			<item value="0xCD">8级：东丈|椎拳崇</item>
+			<item value="0xCE">9级：特瑞|罗伯特|克里斯</item>
+			<item value="0xCF">10级：莉昂娜|龙二</item>
+			<item value="0xD0">11级：红丸|金家藩|玛丽|真吾</item>
+			<item value="0xD1">12级：镇元斋|火舞|夏尔米</item>
+			<item value="0xD2">13级：克拉克</item>
+			<item value="0xD3">14级：由莉|雅典娜|神乐|蔡宝健</item>
+			<item value="0xD5">15级：安迪</item>
+			<item value="0xDC">16级：比利</item>
+			<item value="0xE0">17级：暴走八神|暴走莉昂娜</item>
+			<item value="0xFF">18级：最低</item>
+		</parameter>
+		<script state="run">
+			<action>maincpu.pb@1081f1=param</action>
+		</script>
+	</cheat>
+	<cheat desc="P1眩晕抗性">
+		<parameter>
+			<item value="0x23">S级</item>
+			<item value="0x46">A级</item>
+			<item value="0x69">B级</item>
+			<item value="0x8c">C级</item>
+			<item value="0xAF">D级</item>
+			<item value="0xB0">1级：大蛇</item>
+			<item value="0xEA">2级：陈国汉</item>
+			<item value="0xF0">3级：大门|拉尔夫</item>
+			<item value="0xF2">4级：东丈</item>
+			<item value="0xf4">5级：草薙|特瑞|KING|金家藩|七枷社|龙二|八神</item>
+			<item value="0xf5">6级：莉昂娜|椎拳崇|火舞|夏尔米|玛丽|真吾</item>
+			<item value="0xf6">7级：龙虎队|克拉克|雅典娜|镇元斋|神乐|克里斯</item>
+			<item value="0xf7">8级：蔡宝健</item>
+			<item value="0xf8">9级：红丸|安迪|比利</item>
+			<item value="0xfb">10级：暴走八神|暴走莉昂娜</item>
+		</parameter>
+		<script state="run">
+			<action>maincpu.pb@1081f4=param</action>
+		</script>
+	</cheat>
+	<cheat desc="P1破防抗性">
+		<parameter>
+			<item value="0x19">S级</item>
+			<item value="0x32">A级</item>
+			<item value="0x4B">B级</item>
+			<item value="0x64">C级</item>
+			<item value="0x7D">D级</item>
+			<item value="0x80">1级：大蛇</item>
+			<item value="0xCA">2级：陈国汉</item>
+			<item value="0xCB">3级：大门</item>
+			<item value="0xCD">4级：克拉克</item>
+			<item value="0xCE">5级：拉尔夫|夏尔米</item>
+			<item value="0xD0">6级：安迪|龙二</item>
+			<item value="0xD2">7级：镇元斋|比利</item>
+			<item value="0xD4">8级：东丈|由莉|神乐|七枷社</item>
+			<item value="0xD5">9级：雅典娜|KING|蔡宝健</item>
+			<item value="0xD6">10级：红丸|椎拳崇</item>
+			<item value="0xD7">11级：金家藩|八神</item>
+			<item value="0xD8">12级：特瑞|坂崎良|罗伯特|莉昂娜|火舞</item>
+			<item value="0xD9">13级：草薙|克里斯|玛丽</item>
+			<item value="0xDB">14级：暴走八神|真吾</item>
+			<item value="0xDF">15级：暴走莉昂娜</item>
+		</parameter>
+		<script state="run">
+			<action>maincpu.pb@1081f3=param</action>
+		</script>
+	</cheat>
+	<cheat desc="P1攻击附加效果">
+		<parameter>
+			<item value="0x00">普通</item>
+			<item value="0x10">喷血</item>
+			<item value="0x20">红焰A型</item>
+			<item value="0x30">紫焰</item>
+			<item value="0x40">电击</item>
+			<item value="0x50">红焰B型</item>
+			<item value="0x60">铁球</item>
+			<item value="0x70">Critical Hit</item>
+			<item value="0x80">破坏防御</item>
+			<item value="0x90">喷血+破坏防御</item>
+			<item value="0xA0">红焰A型+破坏防御</item>
+			<item value="0xB0">紫焰+破坏防御</item>
+			<item value="0xC0">电击+破坏防御</item>
+			<item value="0xD0">红焰B型+破坏防御</item>
+			<item value="0xE0">铁球+破坏防御</item>
+			<item value="0xF0">Critical Hit+破坏防御</item>
+		</parameter>
+		<script state="run">
+			<action>maincpu.pb@10817E=param|(maincpu.pb@10817E BAND ~param)</action>
+		</script>
+	</cheat>
+	<cheat desc="P1攻击段位属性">
+		<parameter>
+			<item value="0x0">中段</item>
+			<item value="0x1">抗所有投</item>
+			<item value="0x2">抗普通投</item>
+			<item value="0x3">不后弹</item>
+			<item value="0x4">下段</item>
+			<item value="0x8">上段</item>
+			<item value="0xC">不可防御</item>
+			<item value="0x5">下段+抗所有投</item>
+			<item value="0x6">下段+抗普通投</item>
+			<item value="0x7">下段+不后弹</item>
+			<item value="0x9">上段+抗所有投</item>
+			<item value="0xA">上段+抗普通投</item>
+			<item value="0xB">上段+不后弹</item>
+			<item value="0xD">抗所有投+不可防御</item>
+			<item value="0xE">抗普通投+不可防御</item>
+			<item value="0xF">不后弹+不可防御</item>
+		</parameter>
+		<script state="run">
+			<action>maincpu.pb@10817E=param|(maincpu.pb@10817E BAND ~param)</action>
+		</script>
+	</cheat>
+	<cheat desc="P1攻击Cancel类型">
+		<parameter>
+			<item value="0x0">不可Cancel</item>
+			<item value="0x1">削弱对空追打</item>
+			<item value="0x2">down attack</item>
+			<item value="0x4">可Cancel必杀技和超必杀技</item>
+			<item value="0x8">可Cancel特殊技</item>
+			<item value="0xC">完全Cancel</item>
+			<item value="0x5">可Cancel必杀技和超必杀技+削弱对空追打</item>
+			<item value="0x6">可Cancel必杀技和超必杀技+down attack</item>
+			<item value="0x9">可Cancel特殊技+削弱对空追打</item>
+			<item value="0xA">可Cancel特殊技+down attack</item>
+			<item value="0xD">完全Cancel+削弱对空追打</item>
+			<item value="0xE">完全Cancel+down attack</item>
+		</parameter>
+		<script state="run">
+			<action>maincpu.pb@10817D=param|(maincpu.pb@10817D BAND ~param)</action>
+		</script>
+	</cheat>
+	<cheat desc="P1解除眩晕">
+		<script state="on">
+			<action>maincpu.pb@108173=0</action>
+		</script>
+	</cheat>
+	<cheat desc="P1暴气状态+空中出招">
+		<comment>立即锁定为暴气状态，并且可以在空中使用必杀技</comment>
+		<script state="run">
+			<action>maincpu.pb@1081E0=10</action>
+		</script>
+	</cheat>
+	<cheat desc="P1招式封锁">
+		<script state="run">
+			<action>maincpu.pb@1082B2=1</action>
+		</script>
+	</cheat>
+	<cheat desc="P1护身真气">
+		<script state="run">
+			<action>maincpu.pb@10819A=C</action>
+		</script>
+	</cheat>
+	<cheat desc="P1出招免蓄力">
+		<script state="run">
+			<action>maincpu.pb@10E7E6=FF</action>
+			<action>maincpu.pb@10E7E8=FF</action>
+			<action>maincpu.pb@10E7EA=FF</action>
+			<action>maincpu.pb@10E7EC=FF</action>
+			<action>maincpu.pb@10E7EE=FF</action>
+			<action>maincpu.pb@10E7F4=FF</action>
+		</script>
+	</cheat>
+	<cheat desc="P1战前偷袭+连击增加">
+		<script state="run">
+			<action>maincpu.pb@1081E2=10</action>
+		</script>
+	</cheat>
+	<cheat desc="P1快速收招">
+		<script state="run">
+			<action>maincpu.pb@108224=f0</action>
+		</script>
+	</cheat>
+	<cheat desc="P1Counter">
+		<script state="run">
+			<action>maincpu.pb@108395=3</action>
+		</script>
+	</cheat>
+	<cheat desc="P1加速">
+		<script state="run">
+			<action>maincpu.pb@10817A=0</action>
+		</script>
+	</cheat>
+	<cheat desc="P1穿人">
+		<script state="run">
+			<action>maincpu.pb@1081A4=80</action>
+		</script>
+	</cheat>
+	<cheat desc="P1霸体">
+		<script state="run">
+			<action>maincpu.pb@1083E6=81</action>
+		</script>
+	</cheat>
+	<cheat desc="P1远程打击">
+		<script state="run">
+			<action>maincpu.pb@108193=ff</action>
+		</script>
+	</cheat>
+	<cheat desc="P1无限投技追击">
+		<script state="run">
+			<action>maincpu.pb@1083E3=0</action>
+		</script>
+	</cheat>
+	<cheat desc="P2体力设置">
+		<parameter>
+			<item value="0x67">满血</item>
+			<item value="0x10">见红</item>
+			<item value="0x01">一打就死</item>
+		</parameter>
+		<script state="run">
+			<action>maincpu.pb@108439=param</action>
+		</script>
+	</cheat>
+	<cheat desc="P2系统">
+		<parameter>
+			<item value="0x00">ADV</item>
+			<item value="0x01">EX</item>
+		</parameter>
+		<script state="run">
+			<action>maincpu.pb@10A85A=param</action>
+		</script>
+	</cheat>
+	<cheat desc="P2ADV能量设置">
+		<parameter>
+			<item value="0">满能量</item>
+			<item value="1">满能量，爆气后保持在MAX状态</item>
+			<item value="2">无能量</item>
+			<item value="3">快速蓄能量A型</item>
+			<item value="4">快速蓄能量B型</item>
+		</parameter>
+		<script state="run">
+			<action condition="param==0">maincpu.pb@1084E3=3</action>
+			<action condition="param==0">maincpu.pb@1083E8=0</action>
+			<action condition="param==1">maincpu.pb@1084E3=3</action>
+			<action condition="param==1">maincpu.pb@1083E8=0</action>
+			<action condition="param==1">maincpu.pb@1083EB=40</action>
+			<action condition="param==2">maincpu.pb@1084E3=0</action>
+			<action condition="param==2">maincpu.pb@1083E8=0</action>
+			<action condition="param==3">maincpu.pb@1083E8=7F</action>
+			<action condition="param==4">maincpu.pb@1083E8=80</action>
+		</script>
+	</cheat>
+	<cheat desc="P2眩晕值">
+		<parameter>
+			<item value="0x67">打不晕</item>
+			<item value="0x00">一打就晕</item>
+		</parameter>
+		<script state="run">
+			<action>maincpu.pb@10843F=param</action>
+		</script>
+	</cheat>
+	<cheat desc="P2破防值">
+		<parameter>
+			<item value="0x67">不会被破防</item>
+			<item value="0x00">guard crush</item>
+		</parameter>
+		<script state="run">
+			<action>maincpu.pb@108447=param</action>
+		</script>
+	</cheat>
+	<cheat desc="P2移动力">
+		<parameter>
+			<item value="0x00">无法移动</item>
+			<item value="0x03">正常</item>
+			<item value="0x05">暴走</item>
+			<item value="0x09">飞驰</item>
+			<item value="0x2F">狂奔</item>
+			<item value="0xCF">音速</item>
+			<item value="0xFF">光速</item>
+		</parameter>
+		<script state="run">
+			<action>maincpu.pb@10E97B=param</action>
+		</script>
+		<script state="off">
+			<action>maincpu.pb@10E97B=3</action>
+		</script>
+	</cheat>
+	<cheat desc="P2跳跃力">
+		<parameter>
+			<item value="0x7F">正常</item>
+			<item value="0xE0">小跳</item>
+			<item value="0x5F">接近大跳</item>
+			<item value="0x4F">时间栏以下</item>
+			<item value="0x3F">屏幕顶点以下</item>
+			<item value="0x2F">屏幕顶点</item>
+			<item value="0x1F">屏幕顶点以上</item>
+		</parameter>
+		<script state="run">
+			<action>maincpu.pb@10E984=param</action>
+		</script>
+		<script state="off">
+			<action>maincpu.pb@10E984=3</action>
+		</script>
+	</cheat>
+	<cheat desc="P2防御力">
+		<parameter>
+			<item value="0x1E">S级</item>
+			<item value="0x3C">A级</item>
+			<item value="0x5A">B级</item>
+			<item value="0x78">C级</item>
+			<item value="0x96">D级</item>
+			<item value="0xA5">1级：大蛇</item>
+			<item value="0xC1">2级：陈国汉</item>
+			<item value="0xC3">3级：大门</item>
+			<item value="0xC5">4级：坂崎良</item>
+			<item value="0xC7">5级：拉尔夫</item>
+			<item value="0xC9">6级：八神</item>
+			<item value="0xCC">7级：草薙|KING|七枷社</item>
+			<item value="0xCD">8级：东丈|椎拳崇</item>
+			<item value="0xCE">9级：特瑞|罗伯特|克里斯</item>
+			<item value="0xCF">10级：莉昂娜|龙二</item>
+			<item value="0xD0">11级：红丸|金家藩|玛丽|真吾</item>
+			<item value="0xD1">12级：镇元斋|火舞|夏尔米</item>
+			<item value="0xD2">13级：克拉克</item>
+			<item value="0xD3">14级：由莉|雅典娜|神乐|蔡宝健</item>
+			<item value="0xD5">15级：安迪</item>
+			<item value="0xDC">16级：比利</item>
+			<item value="0xE0">17级：暴走八神|暴走莉昂娜</item>
+			<item value="0xFF">18级：最低</item>
+		</parameter>
+		<script state="run">
+			<action>maincpu.pb@1083f1=param</action>
+		</script>
+	</cheat>
+	<cheat desc="P2眩晕抗性">
+		<parameter>
+			<item value="0x23">S级</item>
+			<item value="0x46">A级</item>
+			<item value="0x69">B级</item>
+			<item value="0x8c">C级</item>
+			<item value="0xAF">D级</item>
+			<item value="0xB0">1级：大蛇</item>
+			<item value="0xEA">2级：陈国汉</item>
+			<item value="0xF0">3级：大门|拉尔夫</item>
+			<item value="0xF2">4级：东丈</item>
+			<item value="0xf4">5级：草薙|特瑞|KING|金家藩|七枷社|龙二|八神</item>
+			<item value="0xf5">6级：莉昂娜|椎拳崇|火舞|夏尔米|玛丽|真吾</item>
+			<item value="0xf6">7级：龙虎队|克拉克|雅典娜|镇元斋|神乐|克里斯</item>
+			<item value="0xf7">8级：蔡宝健</item>
+			<item value="0xf8">9级：红丸|安迪|比利</item>
+			<item value="0xfb">10级：暴走八神|暴走莉昂娜</item>
+		</parameter>
+		<script state="run">
+			<action>maincpu.pb@1083f4=param</action>
+		</script>
+	</cheat>
+	<cheat desc="P2破防抗性">
+		<parameter>
+			<item value="0x19">S级</item>
+			<item value="0x32">A级</item>
+			<item value="0x4B">B级</item>
+			<item value="0x64">C级</item>
+			<item value="0x7D">D级</item>
+			<item value="0x80">1级：大蛇</item>
+			<item value="0xCA">2级：陈国汉</item>
+			<item value="0xCB">3级：大门</item>
+			<item value="0xCD">4级：克拉克</item>
+			<item value="0xCE">5级：拉尔夫|夏尔米</item>
+			<item value="0xD0">6级：安迪|龙二</item>
+			<item value="0xD2">7级：镇元斋|比利</item>
+			<item value="0xD4">8级：东丈|由莉|神乐|七枷社</item>
+			<item value="0xD5">9级：雅典娜|KING|蔡宝健</item>
+			<item value="0xD6">10级：红丸|椎拳崇</item>
+			<item value="0xD7">11级：金家藩|八神</item>
+			<item value="0xD8">12级：特瑞|坂崎良|罗伯特|莉昂娜|火舞</item>
+			<item value="0xD9">13级：草薙|克里斯|玛丽</item>
+			<item value="0xDB">14级：暴走八神|真吾</item>
+			<item value="0xDF">15级：暴走莉昂娜</item>
+		</parameter>
+		<script state="run">
+			<action>maincpu.pb@1083f3=param</action>
+		</script>
+	</cheat>
+	<cheat desc="P2攻击附加效果">
+		<parameter>
+			<item value="0x00">普通</item>
+			<item value="0x10">喷血</item>
+			<item value="0x20">红焰A型</item>
+			<item value="0x30">紫焰</item>
+			<item value="0x40">电击</item>
+			<item value="0x50">红焰B型</item>
+			<item value="0x60">铁球</item>
+			<item value="0x70">Critical Hit</item>
+			<item value="0x80">破坏防御</item>
+			<item value="0x90">喷血+破坏防御</item>
+			<item value="0xA0">红焰A型+破坏防御</item>
+			<item value="0xB0">紫焰+破坏防御</item>
+			<item value="0xC0">电击+破坏防御</item>
+			<item value="0xD0">红焰B型+破坏防御</item>
+			<item value="0xE0">铁球+破坏防御</item>
+			<item value="0xF0">Critical Hit+破坏防御</item>
+		</parameter>
+		<script state="run">
+			<action>maincpu.pb@10837E=param|(maincpu.pb@10837E BAND ~param)</action>
+		</script>
+	</cheat>
+	<cheat desc="P2攻击段位属性">
+		<parameter>
+			<item value="0x0">中段</item>
+			<item value="0x1">抗所有投</item>
+			<item value="0x2">抗普通投</item>
+			<item value="0x3">不后弹</item>
+			<item value="0x4">下段</item>
+			<item value="0x8">上段</item>
+			<item value="0xC">不可防御</item>
+			<item value="0x5">下段+抗所有投</item>
+			<item value="0x6">下段+抗普通投</item>
+			<item value="0x7">下段+不后弹</item>
+			<item value="0x9">上段+抗所有投</item>
+			<item value="0xA">上段+抗普通投</item>
+			<item value="0xB">上段+不后弹</item>
+			<item value="0xD">抗所有投+不可防御</item>
+			<item value="0xE">抗普通投+不可防御</item>
+			<item value="0xF">不后弹+不可防御</item>
+		</parameter>
+		<script state="run">
+			<action>maincpu.pb@10837E=param|(maincpu.pb@10837E BAND ~param)</action>
+		</script>
+	</cheat>
+	<cheat desc="P2攻击Cancel类型">
+		<parameter>
+			<item value="0x0">不可Cancel</item>
+			<item value="0x1">削弱对空追打</item>
+			<item value="0x2">down attack</item>
+			<item value="0x4">可Cancel必杀技和超必杀技</item>
+			<item value="0x8">可Cancel特殊技</item>
+			<item value="0xC">完全Cancel</item>
+			<item value="0x5">可Cancel必杀技和超必杀技+削弱对空追打</item>
+			<item value="0x6">可Cancel必杀技和超必杀技+down attack</item>
+			<item value="0x9">可Cancel特殊技+削弱对空追打</item>
+			<item value="0xA">可Cancel特殊技+down attack</item>
+			<item value="0xD">完全Cancel+削弱对空追打</item>
+			<item value="0xE">完全Cancel+down attack</item>
+		</parameter>
+		<script state="run">
+			<action>maincpu.pb@10837D=param|(maincpu.pb@10837D BAND ~param)</action>
+		</script>
+	</cheat>
+	<cheat desc="P2解除眩晕">
+		<script state="on">
+			<action>maincpu.pb@108373=0</action>
+		</script>
+	</cheat>
+	<cheat desc="P2暴气状态+空中出招">
+		<comment>立即锁定为暴气状态，并且可以在空中使用必杀技</comment>
+		<script state="run">
+			<action>maincpu.pb@1083E0=10</action>
+		</script>
+	</cheat>
+	<cheat desc="P2招式封锁">
+		<script state="run">
+			<action>maincpu.pb@1084B2=1</action>
+		</script>
+	</cheat>
+	<cheat desc="P2护身真气">
+		<script state="run">
+			<action>maincpu.pb@10829A=C</action>
+		</script>
+	</cheat>
+	<cheat desc="P2出招免蓄力">
+		<script state="run">
+			<action>maincpu.pb@10E9F2=FF</action>
+			<action>maincpu.pb@10E9F4=FF</action>
+			<action>maincpu.pb@10E9F5=FF</action>
+			<action>maincpu.pb@10E9F7=FF</action>
+			<action>maincpu.pb@10E9FA=FF</action>
+			<action>maincpu.pb@10EA00=FF</action>
+		</script>
+	</cheat>
+	<cheat desc="P2战前偷袭+连击增加">
+		<script state="run">
+			<action>maincpu.pb@1083E2=10</action>
+		</script>
+	</cheat>
+	<cheat desc="P2快速收招">
+		<script state="run">
+			<action>maincpu.pb@108424=f0</action>
+		</script>
+	</cheat>
+	<cheat desc="P2Counter">
+		<script state="run">
+			<action>maincpu.pb@108195=3</action>
+		</script>
+	</cheat>
+	<cheat desc="P2加速">
+		<script state="run">
+			<action>maincpu.pb@10837A=0</action>
+		</script>
+	</cheat>
+	<cheat desc="P2霸体">
+		<script state="run">
+			<action>maincpu.pb@1081E6=81</action>
+		</script>
+	</cheat>
+	<cheat desc="P2远程打击">
+		<script state="run">
+			<action>maincpu.pb@108393=ff</action>
+		</script>
+	</cheat>
+	<cheat desc="P2无限投技追击">
+		<script state="run">
+			<action>maincpu.pb@1081E3=0</action>
+		</script>
+	</cheat>
+	<cheat desc=" "/>
+	<cheat desc="队伍"/>
+	<cheat desc="P1队伍人数">
+		<parameter>
+			<item value="0x09">单人队伍</item>
+			<item value="0x10">三人队伍</item>
+		</parameter>
+		<script state="run">
+			<action>maincpu.pb@10A848=param</action>
+		</script>
+	</cheat>
+	<cheat desc="P1战败人数">
+		<comment>此功能不够稳定，必须在对战画面时才能使用，并且用后立即解锁</comment>
+		<parameter>
+			<item value="0x00">0人</item>
+			<item value="0x01">1人</item>
+			<item value="0x02">2人</item>
+			<item value="0x03">3人</item>
+		</parameter>
+		<script state="run">
+			<action>maincpu.pb@10A84A=param</action>
+		</script>
+	</cheat>
+	<cheat desc="P1战斗中直接换人">
+		<comment>此功能会造成当前人物招式错乱。</comment>
+		<parameter>
+			<item value="0x00">草薙京</item>
+			<item value="0x01">二阶堂红丸</item>
+			<item value="0x02">大门五郎</item>
+			<item value="0x03">特瑞</item>
+			<item value="0x04">安迪</item>
+			<item value="0x05">东丈</item>
+			<item value="0x06">坂崎亮</item>
+			<item value="0x07">罗伯特</item>
+			<item value="0x08">坂崎由莉</item>
+			<item value="0x09">莉安娜</item>
+			<item value="0x0A">拉尔夫</item>
+			<item value="0x0B">克拉克</item>
+			<item value="0x0C">麻宫雅典娜</item>
+			<item value="0x0D">椎拳崇</item>
+			<item value="0x0E">镇元斋</item>
+			<item value="0x0F">神乐千鹤</item>
+			<item value="0x10">不知火舞</item>
+			<item value="0x11">京</item>
+			<item value="0x12">金甲唤</item>
+			<item value="0x13">陈国汉</item>
+			<item value="0x14">蔡宝健</item>
+			<item value="0x15">七枷社</item>
+			<item value="0x16">夏尔米</item>
+			<item value="0x17">克丽斯</item>
+			<item value="0x18">山崎龙二</item>
+			<item value="0x19">布鲁玛莉</item>
+			<item value="0x1A">比利</item>
+			<item value="0x1B">八神庵</item>
+			<item value="0x1C">暴走八神庵</item>
+			<item value="0x1D">暴走莉安娜</item>
+			<item value="0x1E">大蛇</item>
+			<item value="0x1F">矢吹真吾</item>
+		</parameter>
+		<script state="run">
+			<action>maincpu.pb@108171=param</action>
+		</script>
+	</cheat>
+	<cheat desc="P1第一个角色">
+		<parameter>
+			<item value="0x00">草薙京</item>
+			<item value="0x01">二阶堂红丸</item>
+			<item value="0x02">大门五郎</item>
+			<item value="0x03">特瑞</item>
+			<item value="0x04">安迪</item>
+			<item value="0x05">东丈</item>
+			<item value="0x06">坂崎亮</item>
+			<item value="0x07">罗伯特</item>
+			<item value="0x08">坂崎由莉</item>
+			<item value="0x09">莉安娜</item>
+			<item value="0x0A">拉尔夫</item>
+			<item value="0x0B">克拉克</item>
+			<item value="0x0C">麻宫雅典娜</item>
+			<item value="0x0D">椎拳崇</item>
+			<item value="0x0E">镇元斋</item>
+			<item value="0x0F">神乐千鹤</item>
+			<item value="0x10">不知火舞</item>
+			<item value="0x11">京</item>
+			<item value="0x12">金甲唤</item>
+			<item value="0x13">陈国汉</item>
+			<item value="0x14">蔡宝健</item>
+			<item value="0x15">七枷社</item>
+			<item value="0x16">夏尔米</item>
+			<item value="0x17">克丽斯</item>
+			<item value="0x18">山崎龙二</item>
+			<item value="0x19">布鲁玛莉</item>
+			<item value="0x1A">比利</item>
+			<item value="0x1B">八神庵</item>
+			<item value="0x1C">暴走八神庵</item>
+			<item value="0x1D">暴走莉安娜</item>
+			<item value="0x1E">大蛇</item>
+			<item value="0x1F">矢吹真吾</item>
+			<item value="0x20">暴走七枷社</item>
+			<item value="0x21">暴走夏尔米</item>
+			<item value="0x22">暴走克丽斯</item>
+			<item value="0x23">95草薙京</item>
+		</parameter>
+		<script state="run">
+			<action condition="param==0x00">maincpu.pb@10A84B=0</action>
+			<action condition="param==0x01">maincpu.pb@10A84B=1</action>
+			<action condition="param==0x02">maincpu.pb@10A84B=2</action>
+			<action condition="param==0x03">maincpu.pb@10A84B=3</action>
+			<action condition="param==0x04">maincpu.pb@10A84B=4</action>
+			<action condition="param==0x05">maincpu.pb@10A84B=5</action>
+			<action condition="param==0x06">maincpu.pb@10A84B=6</action>
+			<action condition="param==0x07">maincpu.pb@10A84B=7</action>
+			<action condition="param==0x08">maincpu.pb@10A84B=8</action>
+			<action condition="param==0x09">maincpu.pb@10A84B=9</action>
+			<action condition="param==0x0A">maincpu.pb@10A84B=A</action>
+			<action condition="param==0x0B">maincpu.pb@10A84B=B</action>
+			<action condition="param==0x0C">maincpu.pb@10A84B=C</action>
+			<action condition="param==0x0D">maincpu.pb@10A84B=D</action>
+			<action condition="param==0x0E">maincpu.pb@10A84B=E</action>
+			<action condition="param==0x0F">maincpu.pb@10A84B=F</action>
+			<action condition="param==0x10">maincpu.pb@10A84B=10</action>
+			<action condition="param==0x11">maincpu.pb@10A84B=11</action>
+			<action condition="param==0x12">maincpu.pb@10A84B=12</action>
+			<action condition="param==0x13">maincpu.pb@10A84B=13</action>
+			<action condition="param==0x14">maincpu.pb@10A84B=14</action>
+			<action condition="param==0x15">maincpu.pb@10A84B=15</action>
+			<action condition="param==0x16">maincpu.pb@10A84B=16</action>
+			<action condition="param==0x17">maincpu.pb@10A84B=17</action>
+			<action condition="param==0x18">maincpu.pb@10A84B=18</action>
+			<action condition="param==0x19">maincpu.pb@10A84B=19</action>
+			<action condition="param==0x1A">maincpu.pb@10A84B=1A</action>
+			<action condition="param==0x1B">maincpu.pb@10A84B=1B</action>
+			<action condition="param==0x1C">maincpu.pb@10A84B=1C</action>
+			<action condition="param==0x1D">maincpu.pb@10A84B=1D</action>
+			<action condition="param==0x1E">maincpu.pb@10A84B=1E</action>
+			<action condition="param==0x1F">maincpu.pb@10A84B=1F</action>
+			<action condition="param==0x20">maincpu.pb@10A84B=15</action>
+			<action condition="param==0x20">maincpu.pb@10A857=01|(maincpu.pb@10A857 BAND ~01)</action>
+			<action condition="param==0x21">maincpu.pb@10A84B=16</action>
+			<action condition="param==0x21">maincpu.pb@10A857=01|(maincpu.pb@10A857 BAND ~01)</action>
+			<action condition="param==0x22">maincpu.pb@10A84B=17</action>
+			<action condition="param==0x22">maincpu.pb@10A857=01|(maincpu.pb@10A857 BAND ~01)</action>
+			<action condition="param==0x23">maincpu.pb@10A84B=0</action>
+			<action condition="param==0x23">maincpu.pb@10A857=01|(maincpu.pb@10A857 BAND ~01)</action>
+		</script>
+	</cheat>
+	<cheat desc="P1第二个角色">
+		<parameter>
+			<item value="0x00">草薙京</item>
+			<item value="0x01">二阶堂红丸</item>
+			<item value="0x02">大门五郎</item>
+			<item value="0x03">特瑞</item>
+			<item value="0x04">安迪</item>
+			<item value="0x05">东丈</item>
+			<item value="0x06">坂崎亮</item>
+			<item value="0x07">罗伯特</item>
+			<item value="0x08">坂崎由莉</item>
+			<item value="0x09">莉安娜</item>
+			<item value="0x0A">拉尔夫</item>
+			<item value="0x0B">克拉克</item>
+			<item value="0x0C">麻宫雅典娜</item>
+			<item value="0x0D">椎拳崇</item>
+			<item value="0x0E">镇元斋</item>
+			<item value="0x0F">神乐千鹤</item>
+			<item value="0x10">不知火舞</item>
+			<item value="0x11">京</item>
+			<item value="0x12">金甲唤</item>
+			<item value="0x13">陈国汉</item>
+			<item value="0x14">蔡宝健</item>
+			<item value="0x15">七枷社</item>
+			<item value="0x16">夏尔米</item>
+			<item value="0x17">克丽斯</item>
+			<item value="0x18">山崎龙二</item>
+			<item value="0x19">布鲁玛莉</item>
+			<item value="0x1A">比利</item>
+			<item value="0x1B">八神庵</item>
+			<item value="0x1C">暴走八神庵</item>
+			<item value="0x1D">暴走莉安娜</item>
+			<item value="0x1E">大蛇</item>
+			<item value="0x1F">矢吹真吾</item>
+			<item value="0x20">暴走七枷社</item>
+			<item value="0x21">暴走夏尔米</item>
+			<item value="0x22">暴走克丽斯</item>
+			<item value="0x23">95草薙京</item>
+		</parameter>
+		<script state="run">
+			<action condition="param==0x00">maincpu.pb@10A84C=0</action>
+			<action condition="param==0x01">maincpu.pb@10A84C=1</action>
+			<action condition="param==0x02">maincpu.pb@10A84C=2</action>
+			<action condition="param==0x03">maincpu.pb@10A84C=3</action>
+			<action condition="param==0x04">maincpu.pb@10A84C=4</action>
+			<action condition="param==0x05">maincpu.pb@10A84C=5</action>
+			<action condition="param==0x06">maincpu.pb@10A84C=6</action>
+			<action condition="param==0x07">maincpu.pb@10A84C=7</action>
+			<action condition="param==0x08">maincpu.pb@10A84C=8</action>
+			<action condition="param==0x09">maincpu.pb@10A84C=9</action>
+			<action condition="param==0x0A">maincpu.pb@10A84C=A</action>
+			<action condition="param==0x0B">maincpu.pb@10A84C=B</action>
+			<action condition="param==0x0C">maincpu.pb@10A84C=C</action>
+			<action condition="param==0x0D">maincpu.pb@10A84C=D</action>
+			<action condition="param==0x0E">maincpu.pb@10A84C=E</action>
+			<action condition="param==0x0F">maincpu.pb@10A84C=F</action>
+			<action condition="param==0x10">maincpu.pb@10A84C=10</action>
+			<action condition="param==0x11">maincpu.pb@10A84C=11</action>
+			<action condition="param==0x12">maincpu.pb@10A84C=12</action>
+			<action condition="param==0x13">maincpu.pb@10A84C=13</action>
+			<action condition="param==0x14">maincpu.pb@10A84C=14</action>
+			<action condition="param==0x15">maincpu.pb@10A84C=15</action>
+			<action condition="param==0x16">maincpu.pb@10A84C=16</action>
+			<action condition="param==0x17">maincpu.pb@10A84C=17</action>
+			<action condition="param==0x18">maincpu.pb@10A84C=18</action>
+			<action condition="param==0x19">maincpu.pb@10A84C=19</action>
+			<action condition="param==0x1A">maincpu.pb@10A84C=1A</action>
+			<action condition="param==0x1B">maincpu.pb@10A84C=1B</action>
+			<action condition="param==0x1C">maincpu.pb@10A84C=1C</action>
+			<action condition="param==0x1D">maincpu.pb@10A84C=1D</action>
+			<action condition="param==0x1E">maincpu.pb@10A84C=1E</action>
+			<action condition="param==0x1F">maincpu.pb@10A84C=1F</action>
+			<action condition="param==0x20">maincpu.pb@10A84C=15</action>
+			<action condition="param==0x20">maincpu.pb@10A857=02|(maincpu.pb@10A857 BAND ~02)</action>
+			<action condition="param==0x21">maincpu.pb@10A84C=16</action>
+			<action condition="param==0x21">maincpu.pb@10A857=02|(maincpu.pb@10A857 BAND ~02)</action>
+			<action condition="param==0x22">maincpu.pb@10A84C=17</action>
+			<action condition="param==0x22">maincpu.pb@10A857=02|(maincpu.pb@10A857 BAND ~02)</action>
+			<action condition="param==0x23">maincpu.pb@10A84C=0</action>
+			<action condition="param==0x23">maincpu.pb@10A857=02|(maincpu.pb@10A857 BAND ~02)</action>
+		</script>
+	</cheat>
+	<cheat desc="P1第三个角色">
+		<parameter>
+			<item value="0x00">草薙京</item>
+			<item value="0x01">二阶堂红丸</item>
+			<item value="0x02">大门五郎</item>
+			<item value="0x03">特瑞</item>
+			<item value="0x04">安迪</item>
+			<item value="0x05">东丈</item>
+			<item value="0x06">坂崎亮</item>
+			<item value="0x07">罗伯特</item>
+			<item value="0x08">坂崎由莉</item>
+			<item value="0x09">莉安娜</item>
+			<item value="0x0A">拉尔夫</item>
+			<item value="0x0B">克拉克</item>
+			<item value="0x0C">麻宫雅典娜</item>
+			<item value="0x0D">椎拳崇</item>
+			<item value="0x0E">镇元斋</item>
+			<item value="0x0F">神乐千鹤</item>
+			<item value="0x10">不知火舞</item>
+			<item value="0x11">京</item>
+			<item value="0x12">金甲唤</item>
+			<item value="0x13">陈国汉</item>
+			<item value="0x14">蔡宝健</item>
+			<item value="0x15">七枷社</item>
+			<item value="0x16">夏尔米</item>
+			<item value="0x17">克丽斯</item>
+			<item value="0x18">山崎龙二</item>
+			<item value="0x19">布鲁玛莉</item>
+			<item value="0x1A">比利</item>
+			<item value="0x1B">八神庵</item>
+			<item value="0x1C">暴走八神庵</item>
+			<item value="0x1D">暴走莉安娜</item>
+			<item value="0x1E">大蛇</item>
+			<item value="0x1F">矢吹真吾</item>
+			<item value="0x20">暴走七枷社</item>
+			<item value="0x21">暴走夏尔米</item>
+			<item value="0x22">暴走克丽斯</item>
+			<item value="0x23">95草薙京</item>
+		</parameter>
+		<script state="run">
+			<action condition="param==0x00">maincpu.pb@10A84D=0</action>
+			<action condition="param==0x01">maincpu.pb@10A84D=1</action>
+			<action condition="param==0x02">maincpu.pb@10A84D=2</action>
+			<action condition="param==0x03">maincpu.pb@10A84D=3</action>
+			<action condition="param==0x04">maincpu.pb@10A84D=4</action>
+			<action condition="param==0x05">maincpu.pb@10A84D=5</action>
+			<action condition="param==0x06">maincpu.pb@10A84D=6</action>
+			<action condition="param==0x07">maincpu.pb@10A84D=7</action>
+			<action condition="param==0x08">maincpu.pb@10A84D=8</action>
+			<action condition="param==0x09">maincpu.pb@10A84D=9</action>
+			<action condition="param==0x0A">maincpu.pb@10A84D=A</action>
+			<action condition="param==0x0B">maincpu.pb@10A84D=B</action>
+			<action condition="param==0x0C">maincpu.pb@10A84D=C</action>
+			<action condition="param==0x0D">maincpu.pb@10A84D=D</action>
+			<action condition="param==0x0E">maincpu.pb@10A84D=E</action>
+			<action condition="param==0x0F">maincpu.pb@10A84D=F</action>
+			<action condition="param==0x10">maincpu.pb@10A84D=10</action>
+			<action condition="param==0x11">maincpu.pb@10A84D=11</action>
+			<action condition="param==0x12">maincpu.pb@10A84D=12</action>
+			<action condition="param==0x13">maincpu.pb@10A84D=13</action>
+			<action condition="param==0x14">maincpu.pb@10A84D=14</action>
+			<action condition="param==0x15">maincpu.pb@10A84D=15</action>
+			<action condition="param==0x16">maincpu.pb@10A84D=16</action>
+			<action condition="param==0x17">maincpu.pb@10A84D=17</action>
+			<action condition="param==0x18">maincpu.pb@10A84D=18</action>
+			<action condition="param==0x19">maincpu.pb@10A84D=19</action>
+			<action condition="param==0x1A">maincpu.pb@10A84D=1A</action>
+			<action condition="param==0x1B">maincpu.pb@10A84D=1B</action>
+			<action condition="param==0x1C">maincpu.pb@10A84D=1C</action>
+			<action condition="param==0x1D">maincpu.pb@10A84D=1D</action>
+			<action condition="param==0x1E">maincpu.pb@10A84D=1E</action>
+			<action condition="param==0x1F">maincpu.pb@10A84D=1F</action>
+			<action condition="param==0x20">maincpu.pb@10A84D=15</action>
+			<action condition="param==0x20">maincpu.pb@10A857=04|(maincpu.pb@10A857 BAND ~04)</action>
+			<action condition="param==0x21">maincpu.pb@10A84D=16</action>
+			<action condition="param==0x21">maincpu.pb@10A857=04|(maincpu.pb@10A857 BAND ~04)</action>
+			<action condition="param==0x22">maincpu.pb@10A84D=17</action>
+			<action condition="param==0x22">maincpu.pb@10A857=04|(maincpu.pb@10A857 BAND ~04)</action>
+			<action condition="param==0x23">maincpu.pb@10A84D=0</action>
+			<action condition="param==0x23">maincpu.pb@10A857=04|(maincpu.pb@10A857 BAND ~04)</action>
+		</script>
+	</cheat>
+	<cheat desc="P1第一个出场角色">
+		<parameter>
+			<item value="0x00">第一个角色</item>
+			<item value="0x01">第二个角色</item>
+			<item value="0x02">第三个角色</item>
+		</parameter>
+		<script state="run">
+			<action>maincpu.pb@10A851=param</action>
+		</script>
+	</cheat>
+	<cheat desc="P1第二个出场角色">
+		<parameter>
+			<item value="0x00">第一个角色</item>
+			<item value="0x01">第二个角色</item>
+			<item value="0x02">第三个角色</item>
+		</parameter>
+		<script state="run">
+			<action>maincpu.pb@10A852=param</action>
+		</script>
+	</cheat>
+	<cheat desc="P1第三个出场角色">
+		<parameter>
+			<item value="0x00">第一个角色</item>
+			<item value="0x01">第二个角色</item>
+			<item value="0x02">第三个角色</item>
+		</parameter>
+		<script state="run">
+			<action>maincpu.pb@10A853=param</action>
+		</script>
+	</cheat>
+	<cheat desc="P2队伍人数">
+		<parameter>
+			<item value="0x09">单人队伍</item>
+			<item value="0x10">三人队伍</item>
+		</parameter>
+		<script state="run">
+			<action>maincpu.pb@10A859=param</action>
+		</script>
+	</cheat>
+	<cheat desc="P2战败人数">
+		<comment>此功能不够稳定，必须在对战画面时才能使用，并且用后立即解锁</comment>
+		<parameter>
+			<item value="0x00">0人</item>
+			<item value="0x01">1人</item>
+			<item value="0x02">2人</item>
+			<item value="0x03">3人</item>
+		</parameter>
+		<script state="run">
+			<action>maincpu.pb@10A85B=param</action>
+		</script>
+	</cheat>
+	<cheat desc="P2战斗中直接换人">
+		<comment>此功能会造成当前人物招式错乱。</comment>
+		<parameter>
+			<item value="0x00">草薙京</item>
+			<item value="0x01">二阶堂红丸</item>
+			<item value="0x02">大门五郎</item>
+			<item value="0x03">特瑞</item>
+			<item value="0x04">安迪</item>
+			<item value="0x05">东丈</item>
+			<item value="0x06">坂崎亮</item>
+			<item value="0x07">罗伯特</item>
+			<item value="0x08">坂崎由莉</item>
+			<item value="0x09">莉安娜</item>
+			<item value="0x0A">拉尔夫</item>
+			<item value="0x0B">克拉克</item>
+			<item value="0x0C">麻宫雅典娜</item>
+			<item value="0x0D">椎拳崇</item>
+			<item value="0x0E">镇元斋</item>
+			<item value="0x0F">神乐千鹤</item>
+			<item value="0x10">不知火舞</item>
+			<item value="0x11">京</item>
+			<item value="0x12">金甲唤</item>
+			<item value="0x13">陈国汉</item>
+			<item value="0x14">蔡宝健</item>
+			<item value="0x15">七枷社</item>
+			<item value="0x16">夏尔米</item>
+			<item value="0x17">克丽斯</item>
+			<item value="0x18">山崎龙二</item>
+			<item value="0x19">布鲁玛莉</item>
+			<item value="0x1A">比利</item>
+			<item value="0x1B">八神庵</item>
+			<item value="0x1C">暴走八神庵</item>
+			<item value="0x1D">暴走莉安娜</item>
+			<item value="0x1E">大蛇</item>
+			<item value="0x1F">矢吹真吾</item>
+		</parameter>
+		<script state="run">
+			<action>maincpu.pb@108371=param</action>
+		</script>
+	</cheat>
+	<cheat desc="P2第一个角色">
+		<parameter>
+			<item value="0x00">草薙京</item>
+			<item value="0x01">二阶堂红丸</item>
+			<item value="0x02">大门五郎</item>
+			<item value="0x03">特瑞</item>
+			<item value="0x04">安迪</item>
+			<item value="0x05">东丈</item>
+			<item value="0x06">坂崎亮</item>
+			<item value="0x07">罗伯特</item>
+			<item value="0x08">坂崎由莉</item>
+			<item value="0x09">莉安娜</item>
+			<item value="0x0A">拉尔夫</item>
+			<item value="0x0B">克拉克</item>
+			<item value="0x0C">麻宫雅典娜</item>
+			<item value="0x0D">椎拳崇</item>
+			<item value="0x0E">镇元斋</item>
+			<item value="0x0F">神乐千鹤</item>
+			<item value="0x10">不知火舞</item>
+			<item value="0x11">京</item>
+			<item value="0x12">金甲唤</item>
+			<item value="0x13">陈国汉</item>
+			<item value="0x14">蔡宝健</item>
+			<item value="0x15">七枷社</item>
+			<item value="0x16">夏尔米</item>
+			<item value="0x17">克丽斯</item>
+			<item value="0x18">山崎龙二</item>
+			<item value="0x19">布鲁玛莉</item>
+			<item value="0x1A">比利</item>
+			<item value="0x1B">八神庵</item>
+			<item value="0x1C">暴走八神庵</item>
+			<item value="0x1D">暴走莉安娜</item>
+			<item value="0x1E">大蛇</item>
+			<item value="0x1F">矢吹真吾</item>
+			<item value="0x20">暴走七枷社</item>
+			<item value="0x21">暴走夏尔米</item>
+			<item value="0x22">暴走克丽斯</item>
+			<item value="0x23">95草薙京</item>
+		</parameter>
+		<script state="run">
+			<action condition="param==0x00">maincpu.pb@10A85C=0</action>
+			<action condition="param==0x01">maincpu.pb@10A85C=1</action>
+			<action condition="param==0x02">maincpu.pb@10A85C=2</action>
+			<action condition="param==0x03">maincpu.pb@10A85C=3</action>
+			<action condition="param==0x04">maincpu.pb@10A85C=4</action>
+			<action condition="param==0x05">maincpu.pb@10A85C=5</action>
+			<action condition="param==0x06">maincpu.pb@10A85C=6</action>
+			<action condition="param==0x07">maincpu.pb@10A85C=7</action>
+			<action condition="param==0x08">maincpu.pb@10A85C=8</action>
+			<action condition="param==0x09">maincpu.pb@10A85C=9</action>
+			<action condition="param==0x0A">maincpu.pb@10A85C=A</action>
+			<action condition="param==0x0B">maincpu.pb@10A85C=B</action>
+			<action condition="param==0x0C">maincpu.pb@10A85C=C</action>
+			<action condition="param==0x0D">maincpu.pb@10A85C=D</action>
+			<action condition="param==0x0E">maincpu.pb@10A85C=E</action>
+			<action condition="param==0x0F">maincpu.pb@10A85C=F</action>
+			<action condition="param==0x10">maincpu.pb@10A85C=10</action>
+			<action condition="param==0x11">maincpu.pb@10A85C=11</action>
+			<action condition="param==0x12">maincpu.pb@10A85C=12</action>
+			<action condition="param==0x13">maincpu.pb@10A85C=13</action>
+			<action condition="param==0x14">maincpu.pb@10A85C=14</action>
+			<action condition="param==0x15">maincpu.pb@10A85C=15</action>
+			<action condition="param==0x16">maincpu.pb@10A85C=16</action>
+			<action condition="param==0x17">maincpu.pb@10A85C=17</action>
+			<action condition="param==0x18">maincpu.pb@10A85C=18</action>
+			<action condition="param==0x19">maincpu.pb@10A85C=19</action>
+			<action condition="param==0x1A">maincpu.pb@10A85C=1A</action>
+			<action condition="param==0x1B">maincpu.pb@10A85C=1B</action>
+			<action condition="param==0x1C">maincpu.pb@10A85C=1C</action>
+			<action condition="param==0x1D">maincpu.pb@10A85C=1D</action>
+			<action condition="param==0x1E">maincpu.pb@10A85C=1E</action>
+			<action condition="param==0x1F">maincpu.pb@10A85C=1F</action>
+			<action condition="param==0x20">maincpu.pb@10A85C=15</action>
+			<action condition="param==0x20">maincpu.pb@10A868=01|(maincpu.pb@10A868 BAND ~01)</action>
+			<action condition="param==0x21">maincpu.pb@10A85C=16</action>
+			<action condition="param==0x21">maincpu.pb@10A868=01|(maincpu.pb@10A868 BAND ~01)</action>
+			<action condition="param==0x22">maincpu.pb@10A85C=17</action>
+			<action condition="param==0x22">maincpu.pb@10A868=01|(maincpu.pb@10A868 BAND ~01)</action>
+			<action condition="param==0x23">maincpu.pb@10A85C=0</action>
+			<action condition="param==0x23">maincpu.pb@10A868=01|(maincpu.pb@10A868 BAND ~01)</action>
+		</script>
+	</cheat>
+	<cheat desc="P2第二个角色">
+		<parameter>
+			<item value="0x00">草薙京</item>
+			<item value="0x01">二阶堂红丸</item>
+			<item value="0x02">大门五郎</item>
+			<item value="0x03">特瑞</item>
+			<item value="0x04">安迪</item>
+			<item value="0x05">东丈</item>
+			<item value="0x06">坂崎亮</item>
+			<item value="0x07">罗伯特</item>
+			<item value="0x08">坂崎由莉</item>
+			<item value="0x09">莉安娜</item>
+			<item value="0x0A">拉尔夫</item>
+			<item value="0x0B">克拉克</item>
+			<item value="0x0C">麻宫雅典娜</item>
+			<item value="0x0D">椎拳崇</item>
+			<item value="0x0E">镇元斋</item>
+			<item value="0x0F">神乐千鹤</item>
+			<item value="0x10">不知火舞</item>
+			<item value="0x11">京</item>
+			<item value="0x12">金甲唤</item>
+			<item value="0x13">陈国汉</item>
+			<item value="0x14">蔡宝健</item>
+			<item value="0x15">七枷社</item>
+			<item value="0x16">夏尔米</item>
+			<item value="0x17">克丽斯</item>
+			<item value="0x18">山崎龙二</item>
+			<item value="0x19">布鲁玛莉</item>
+			<item value="0x1A">比利</item>
+			<item value="0x1B">八神庵</item>
+			<item value="0x1C">暴走八神庵</item>
+			<item value="0x1D">暴走莉安娜</item>
+			<item value="0x1E">大蛇</item>
+			<item value="0x1F">矢吹真吾</item>
+			<item value="0x20">暴走七枷社</item>
+			<item value="0x21">暴走夏尔米</item>
+			<item value="0x22">暴走克丽斯</item>
+			<item value="0x23">95草薙京</item>
+		</parameter>
+		<script state="run">
+			<action condition="param==0x00">maincpu.pb@10A85D=0</action>
+			<action condition="param==0x01">maincpu.pb@10A85D=1</action>
+			<action condition="param==0x02">maincpu.pb@10A85D=2</action>
+			<action condition="param==0x03">maincpu.pb@10A85D=3</action>
+			<action condition="param==0x04">maincpu.pb@10A85D=4</action>
+			<action condition="param==0x05">maincpu.pb@10A85D=5</action>
+			<action condition="param==0x06">maincpu.pb@10A85D=6</action>
+			<action condition="param==0x07">maincpu.pb@10A85D=7</action>
+			<action condition="param==0x08">maincpu.pb@10A85D=8</action>
+			<action condition="param==0x09">maincpu.pb@10A85D=9</action>
+			<action condition="param==0x0A">maincpu.pb@10A85D=A</action>
+			<action condition="param==0x0B">maincpu.pb@10A85D=B</action>
+			<action condition="param==0x0C">maincpu.pb@10A85D=C</action>
+			<action condition="param==0x0D">maincpu.pb@10A85D=D</action>
+			<action condition="param==0x0E">maincpu.pb@10A85D=E</action>
+			<action condition="param==0x0F">maincpu.pb@10A85D=F</action>
+			<action condition="param==0x10">maincpu.pb@10A85D=10</action>
+			<action condition="param==0x11">maincpu.pb@10A85D=11</action>
+			<action condition="param==0x12">maincpu.pb@10A85D=12</action>
+			<action condition="param==0x13">maincpu.pb@10A85D=13</action>
+			<action condition="param==0x14">maincpu.pb@10A85D=14</action>
+			<action condition="param==0x15">maincpu.pb@10A85D=15</action>
+			<action condition="param==0x16">maincpu.pb@10A85D=16</action>
+			<action condition="param==0x17">maincpu.pb@10A85D=17</action>
+			<action condition="param==0x18">maincpu.pb@10A85D=18</action>
+			<action condition="param==0x19">maincpu.pb@10A85D=19</action>
+			<action condition="param==0x1A">maincpu.pb@10A85D=1A</action>
+			<action condition="param==0x1B">maincpu.pb@10A85D=1B</action>
+			<action condition="param==0x1C">maincpu.pb@10A85D=1C</action>
+			<action condition="param==0x1D">maincpu.pb@10A85D=1D</action>
+			<action condition="param==0x1E">maincpu.pb@10A85D=1E</action>
+			<action condition="param==0x1F">maincpu.pb@10A85D=1F</action>
+			<action condition="param==0x20">maincpu.pb@10A85D=15</action>
+			<action condition="param==0x20">maincpu.pb@10A868=02|(maincpu.pb@10A868 BAND ~02)</action>
+			<action condition="param==0x21">maincpu.pb@10A85D=16</action>
+			<action condition="param==0x21">maincpu.pb@10A868=02|(maincpu.pb@10A868 BAND ~02)</action>
+			<action condition="param==0x22">maincpu.pb@10A85D=17</action>
+			<action condition="param==0x22">maincpu.pb@10A868=02|(maincpu.pb@10A868 BAND ~02)</action>
+			<action condition="param==0x23">maincpu.pb@10A85D=0</action>
+			<action condition="param==0x23">maincpu.pb@10A868=02|(maincpu.pb@10A868 BAND ~02)</action>
+		</script>
+	</cheat>
+	<cheat desc="P2第三个角色">
+		<parameter>
+			<item value="0x00">草薙京</item>
+			<item value="0x01">二阶堂红丸</item>
+			<item value="0x02">大门五郎</item>
+			<item value="0x03">特瑞</item>
+			<item value="0x04">安迪</item>
+			<item value="0x05">东丈</item>
+			<item value="0x06">坂崎亮</item>
+			<item value="0x07">罗伯特</item>
+			<item value="0x08">坂崎由莉</item>
+			<item value="0x09">莉安娜</item>
+			<item value="0x0A">拉尔夫</item>
+			<item value="0x0B">克拉克</item>
+			<item value="0x0C">麻宫雅典娜</item>
+			<item value="0x0D">椎拳崇</item>
+			<item value="0x0E">镇元斋</item>
+			<item value="0x0F">神乐千鹤</item>
+			<item value="0x10">不知火舞</item>
+			<item value="0x11">京</item>
+			<item value="0x12">金甲唤</item>
+			<item value="0x13">陈国汉</item>
+			<item value="0x14">蔡宝健</item>
+			<item value="0x15">七枷社</item>
+			<item value="0x16">夏尔米</item>
+			<item value="0x17">克丽斯</item>
+			<item value="0x18">山崎龙二</item>
+			<item value="0x19">布鲁玛莉</item>
+			<item value="0x1A">比利</item>
+			<item value="0x1B">八神庵</item>
+			<item value="0x1C">暴走八神庵</item>
+			<item value="0x1D">暴走莉安娜</item>
+			<item value="0x1E">大蛇</item>
+			<item value="0x1F">矢吹真吾</item>
+			<item value="0x20">暴走七枷社</item>
+			<item value="0x21">暴走夏尔米</item>
+			<item value="0x22">暴走克丽斯</item>
+			<item value="0x23">95草薙京</item>
+		</parameter>
+		<script state="run">
+			<action condition="param==0x00">maincpu.pb@10A85E=0</action>
+			<action condition="param==0x01">maincpu.pb@10A85E=1</action>
+			<action condition="param==0x02">maincpu.pb@10A85E=2</action>
+			<action condition="param==0x03">maincpu.pb@10A85E=3</action>
+			<action condition="param==0x04">maincpu.pb@10A85E=4</action>
+			<action condition="param==0x05">maincpu.pb@10A85E=5</action>
+			<action condition="param==0x06">maincpu.pb@10A85E=6</action>
+			<action condition="param==0x07">maincpu.pb@10A85E=7</action>
+			<action condition="param==0x08">maincpu.pb@10A85E=8</action>
+			<action condition="param==0x09">maincpu.pb@10A85E=9</action>
+			<action condition="param==0x0A">maincpu.pb@10A85E=A</action>
+			<action condition="param==0x0B">maincpu.pb@10A85E=B</action>
+			<action condition="param==0x0C">maincpu.pb@10A85E=C</action>
+			<action condition="param==0x0D">maincpu.pb@10A85E=D</action>
+			<action condition="param==0x0E">maincpu.pb@10A85E=E</action>
+			<action condition="param==0x0F">maincpu.pb@10A85E=F</action>
+			<action condition="param==0x10">maincpu.pb@10A85E=10</action>
+			<action condition="param==0x11">maincpu.pb@10A85E=11</action>
+			<action condition="param==0x12">maincpu.pb@10A85E=12</action>
+			<action condition="param==0x13">maincpu.pb@10A85E=13</action>
+			<action condition="param==0x14">maincpu.pb@10A85E=14</action>
+			<action condition="param==0x15">maincpu.pb@10A85E=15</action>
+			<action condition="param==0x16">maincpu.pb@10A85E=16</action>
+			<action condition="param==0x17">maincpu.pb@10A85E=17</action>
+			<action condition="param==0x18">maincpu.pb@10A85E=18</action>
+			<action condition="param==0x19">maincpu.pb@10A85E=19</action>
+			<action condition="param==0x1A">maincpu.pb@10A85E=1A</action>
+			<action condition="param==0x1B">maincpu.pb@10A85E=1B</action>
+			<action condition="param==0x1C">maincpu.pb@10A85E=1C</action>
+			<action condition="param==0x1D">maincpu.pb@10A85E=1D</action>
+			<action condition="param==0x1E">maincpu.pb@10A85E=1E</action>
+			<action condition="param==0x1F">maincpu.pb@10A85E=1F</action>
+			<action condition="param==0x20">maincpu.pb@10A85E=15</action>
+			<action condition="param==0x20">maincpu.pb@10A868=04|(maincpu.pb@10A868 BAND ~04)</action>
+			<action condition="param==0x21">maincpu.pb@10A85E=16</action>
+			<action condition="param==0x21">maincpu.pb@10A868=04|(maincpu.pb@10A868 BAND ~04)</action>
+			<action condition="param==0x22">maincpu.pb@10A85E=17</action>
+			<action condition="param==0x22">maincpu.pb@10A868=04|(maincpu.pb@10A868 BAND ~04)</action>
+			<action condition="param==0x23">maincpu.pb@10A85E=0</action>
+			<action condition="param==0x23">maincpu.pb@10A868=04|(maincpu.pb@10A868 BAND ~04)</action>
+		</script>
+	</cheat>
+	<cheat desc="P2第一个出场角色">
+		<parameter>
+			<item value="0x00">第一个角色</item>
+			<item value="0x01">第二个角色</item>
+			<item value="0x02">第三个角色</item>
+		</parameter>
+		<script state="run">
+			<action>maincpu.pb@10A862=param</action>
+		</script>
+	</cheat>
+	<cheat desc="P2第二个出场角色">
+		<parameter>
+			<item value="0x00">第一个角色</item>
+			<item value="0x01">第二个角色</item>
+			<item value="0x02">第三个角色</item>
+		</parameter>
+		<script state="run">
+			<action>maincpu.pb@10A863=param</action>
+		</script>
+	</cheat>
+	<cheat desc="P2第三个出场角色">
+		<parameter>
+			<item value="0x00">第一个角色</item>
+			<item value="0x01">第二个角色</item>
+			<item value="0x02">第三个角色</item>
+		</parameter>
+		<script state="run">
+			<action>maincpu.pb@10A864=param</action>
+		</script>
+	</cheat>
+	<cheat desc=" "/>
+	<cheat desc="外观"/>
+	<cheat desc="选人全体头像灰色">
+		<script state="run">
+			<action>maincpu.pb@10EBE6=FF</action>
+			<action>maincpu.pb@10EBE7=FF</action>
+			<action>maincpu.pb@10EBE8=FF</action>
+			<action>maincpu.pb@10EBE9=FF</action>
+			<action>maincpu.pb@10EC2A=A8</action>
+			<action>maincpu.pb@10EC2B=11</action>
+			<action>maincpu.pb@10EC2C=A8</action>
+			<action>maincpu.pb@10EC2D=11</action>
+			<action>maincpu.pb@10EC2E=A8</action>
+			<action>maincpu.pb@10EC2F=11</action>
+		</script>
+	</cheat>
+	<cheat desc="回合数显示">
+		<parameter>
+			<item value="0">第一回合</item>
+			<item value="1">第二回合</item>
+			<item value="2">第三回合</item>
+			<item value="3">第四回合</item>
+			<item value="4">第五回合</item>
+			<item value="5">最终回合</item>
+		</parameter>
+		<script state="run">
+			<action>maincpu.pb@10A7F1=param</action>
+		</script>
+	</cheat>
+	<cheat desc="P1人物尺寸">
+		<parameter>
+			<item value="0x88">Ｑ版</item>
+			<item value="0x00">隐身</item>
+		</parameter>
+		<script state="run">
+			<action>maincpu.pb@10812E=param</action>
+			<action>maincpu.pb@10812F=param</action>
+		</script>
+		<script state="off">
+			<action>maincpu.pb@10812E=0xff</action>
+			<action>maincpu.pb@10812F=0xff</action>
+		</script>
+	</cheat>
+	<cheat desc="P1人物外观">
+		<parameter>
+			<item value="0">高亮</item>
+			<item value="1">红炎</item>
+			<item value="2">紫炎</item>
+			<item value="3">电光</item>
+			<item value="4">闪耀</item>
+			<item value="5">无特效</item>
+		</parameter>
+		<script state="run">
+			<action condition="(param==0)">maincpu.pb@10813A=13</action>
+			<action condition="(param==1)">maincpu.pb@10813A=f8</action>
+			<action condition="(param==2)">maincpu.pb@10813A=f9</action>
+			<action condition="(param==3)">maincpu.pb@1081E3=22</action>
+			<action condition="(param==4)">maincpu.pb@108129=A3</action>
+			<action condition="(param==5)">maincpu.pb@10813A=00</action>
+		</script>
+	</cheat>
+	<cheat desc="P1第一个角色的配色">
+		<parameter>
+			<item value="0x00">A颜色（ADV）</item>
+			<item value="0x01">D颜色（ADV）</item>
+			<item value="0x02">A颜色（额外模式）</item>
+			<item value="0x03">D颜色（额外模式）</item>
+		</parameter>
+		<script state="run">
+			<action>maincpu.pb@10A84E=param</action>
+		</script>
+	</cheat>
+	<cheat desc="P1第二个角色的配色">
+		<parameter>
+			<item value="0x00">A颜色（ADV）</item>
+			<item value="0x01">D颜色（ADV）</item>
+			<item value="0x02">A颜色（EX）</item>
+			<item value="0x03">D颜色（EX）</item>
+		</parameter>
+		<script state="run">
+			<action>maincpu.pb@10A84F=param</action>
+		</script>
+	</cheat>
+	<cheat desc="P1第三个角色的配色">
+		<parameter>
+			<item value="0x00">A颜色（ADV）</item>
+			<item value="0x01">D颜色（ADV）</item>
+			<item value="0x02">A颜色（EX）</item>
+			<item value="0x03">D颜色（EX）</item>
+		</parameter>
+		<script state="run">
+			<action>maincpu.pb@10A850=param</action>
+		</script>
+	</cheat>
+	<cheat desc="P1关闭连击数显示">
+		<script state="run">
+			<action>maincpu.pb@1082B0=0</action>
+		</script>
+	</cheat>
+	<cheat desc="P2人物尺寸">
+		<parameter>
+			<item value="0x88">Ｑ版</item>
+			<item value="0x00">隐身</item>
+		</parameter>
+		<script state="run">
+			<action>maincpu.pb@10832E=param</action>
+			<action>maincpu.pb@10832F=param</action>
+		</script>
+		<script state="off">
+			<action>maincpu.pb@10832E=0xff</action>
+			<action>maincpu.pb@10832F=0xff</action>
+		</script>
+	</cheat>
+	<cheat desc="P2人物外观">
+		<parameter>
+			<item value="0">高亮</item>
+			<item value="1">红炎</item>
+			<item value="2">紫炎</item>
+			<item value="3">电光</item>
+			<item value="4">闪耀</item>
+			<item value="5">无特效</item>
+		</parameter>
+		<script state="run">
+			<action condition="(param==0)">maincpu.pb@10833A=33</action>
+			<action condition="(param==1)">maincpu.pb@10833A=f8</action>
+			<action condition="(param==2)">maincpu.pb@10833A=f9</action>
+			<action condition="(param==3)">maincpu.pb@1083E3=22</action>
+			<action condition="(param==4)">maincpu.pb@108329=A3</action>
+			<action condition="(param==5)">maincpu.pb@10833A=00</action>
+		</script>
+	</cheat>
+	<cheat desc="P2第一个角色的配色">
+		<parameter>
+			<item value="0x00">A颜色（ADV）</item>
+			<item value="0x01">D颜色（ADV）</item>
+			<item value="0x02">A颜色（EX）</item>
+			<item value="0x03">D颜色（EX）</item>
+		</parameter>
+		<script state="run">
+			<action>maincpu.pb@10A85F=param</action>
+		</script>
+	</cheat>
+	<cheat desc="P2第二个角色的配色">
+		<parameter>
+			<item value="0x00">A颜色（ADV）</item>
+			<item value="0x01">D颜色（ADV）</item>
+			<item value="0x02">A颜色（EX）</item>
+			<item value="0x03">D颜色（EX）</item>
+		</parameter>
+		<script state="run">
+			<action>maincpu.pb@10A860=param</action>
+		</script>
+	</cheat>
+	<cheat desc="P2第三个角色的配色">
+		<parameter>
+			<item value="0x00">A颜色（ADV）</item>
+			<item value="0x01">D颜色（ADV）</item>
+			<item value="0x02">A颜色（EX）</item>
+			<item value="0x03">D颜色（EX）</item>
+		</parameter>
+		<script state="run">
+			<action>maincpu.pb@10A861=param</action>
+		</script>
+	</cheat>
+	<cheat desc="P2关闭连击数显示">
+		<script state="run">
+			<action>maincpu.pb@1084B0=0</action>
+		</script>
+	</cheat>
+</mamecheat>
