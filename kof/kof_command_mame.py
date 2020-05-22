@@ -146,18 +146,18 @@ def restart(role):
     for key in keys_map.keys():
         time.sleep(0.2)
         win32api.keybd_event(keys_map[key], virtual_key_map[key], win32con.KEYEVENTF_KEYUP, 0)
-    time.sleep(3)
+    time.sleep(2)
     # 初次载入需要按任意键，不然导致后面开始按键失效
     # 选single play，advanced, 选kyo
     operation3('as22aaaa')
     # 有时候会卡一下，有可能是设置对手的原因
-    time.sleep(5)
+    # time.sleep(5)
     if role == 'kyo':
-        operation3('as22aaaaa')
+        operation3('aa')
     elif role == 'iori':
-        operation3('as22aaaa8a')
+        operation3('8aa')
     elif role == 'robert':
-        operation3('as22aaaa44a')
+        operation3('44aa')
 
 
 def operation_test(role):
