@@ -26,9 +26,8 @@ class random_model():
         pass
 
 
-# 这里改成 1d 卷积 + lstm + dueling dqn
+# 这里改成 1d 卷积 + lstm + 改过的dueling dqn
 class model_1(kof_dqn):
-
     def __init__(self, role, ):
         super().__init__(role=role, model_name='m1', input_steps=6, reward_steps=4, e_greedy=0.7)
         if os.path.exists('{}/{}_{}.index'.format(data_dir, self.role, self.model_name)):
@@ -48,43 +47,44 @@ class model_1(kof_dqn):
         role2_energy = Input(shape=(self.input_steps,), name='role2_energy')
         role2_energy_embedding = layers.Embedding(5, 2, name='role2_energy_embedding')(role2_energy)
 
+        role2_baoqi = Input(shape=(self.input_steps,), name='role2_baoqi')
+        role2_baoqi_embedding = layers.Embedding(2, 2, name='role2_baoqi_embedding')(role2_baoqi)
+
         role_position = Input(shape=(self.input_steps, 4), name='role_position')
 
         action_input = Input(shape=(self.input_steps,), name='action_input')
         action_input_embedding = layers.Embedding(self.action_num, 4, name='action_input_embedding')(action_input)
         concatenate_status = concatenate(
             [role1_actions_embedding, role_position, action_input_embedding, role1_energy_embedding,
-             role2_actions_embedding, role2_energy_embedding])
+             role2_actions_embedding, role2_energy_embedding, role2_baoqi_embedding])
 
-        conv_status = layers.SeparableConv1D(32, 1, padding='same', strides=1, kernel_initializer='he_uniform')(
+        conv_status = layers.SeparableConv1D(64, 1, padding='same', strides=1, kernel_initializer='he_uniform')(
             concatenate_status)
         conv_status = BatchNormalization()(conv_status)
         conv_status = layers.LeakyReLU(0.05)(conv_status)
-        conv_status = layers.SeparableConv1D(64, 2, padding='same', strides=1, kernel_initializer='he_uniform')(
+        conv_status = layers.SeparableConv1D(128, 2, padding='same', strides=1, kernel_initializer='he_uniform')(
             conv_status)
         conv_status = BatchNormalization()(conv_status)
         conv_status = layers.LeakyReLU(0.05)(conv_status)
         conv_status = layers.MaxPool1D(2, 1, padding='same')(conv_status)
-        lstm_status = CuDNNLSTM(256)(conv_status)
-        # lstm_position = CuDNNLSTM(128)(position)
+        lstm_status = CuDNNLSTM(512)(conv_status)
 
-        t_status = layers.Dense(256, kernel_initializer='he_uniform')(lstm_status)
+        t_status = layers.Dense(512, kernel_initializer='he_uniform')(lstm_status)
         t_status = layers.LeakyReLU(0.05)(t_status)
 
-        # 这里对dueling_dqn_model做一些修改，防守单独输出
-        # 攻击动作，则采用基础标量 + 均值为0的向量策略
-        guard = layers.Dense(2)(t_status)
-        # 线性的初始化可以用zeros
+        base_action_type = 4
+        guard = layers.Dense(base_action_type - 1)(t_status)
+
         value = layers.Dense(1)(t_status)
-        value = concatenate([value] * (self.action_num - 2))
-        a = layers.Dense(self.action_num - 2)(t_status)
+        value = concatenate([value] * (self.action_num - base_action_type + 1))
+        a = layers.Dense(self.action_num - base_action_type + 1)(t_status)
         mean = layers.Lambda(lambda x: K.mean(x, axis=1, keepdims=True))(a)
         advantage = layers.Subtract()([a, mean])
         attack = layers.Add()([value, advantage])
         output = concatenate([guard, attack])
         model = Model(
             [role1_actions, role2_actions, role1_energy, role2_energy,
-             role_position, action_input], output)
+             role_position, role2_baoqi, action_input], output)
 
         model.compile(optimizer=Adam(lr=0.0001), loss='mse')
 
@@ -93,10 +93,10 @@ class model_1(kof_dqn):
     def raw_env_data_to_input(self, raw_data, action):
         # 这里energy改成一个只输入最后一个,这里输出的形状应该就是1，貌似在keras中也能正常运作
         return [raw_data[:, :, 0], raw_data[:, :, 1], raw_data[:, :, 2], raw_data[:, :, 3],
-                raw_data[:, :, 4:8], action]
+                raw_data[:, :, 4:8], raw_data[:, :, 8], action]
 
     def empty_env(self):
-        return [[], [], [], [], [], []]
+        return [[], [], [], [], [], [], []]
 
 
 # 对相近的特征先做卷积，再合并处理
@@ -226,43 +226,52 @@ class dueling_dqn_model(kof_dqn):
         role1_actions_embedding = layers.Embedding(512, 4, name='role1_actions_embedding')(role1_actions)
         role2_actions_embedding = layers.Embedding(512, 8, name='role2_actions_embedding')(role2_actions)
 
-        role1_energy = Input(shape=(1,), name='role1_energy')
+        role1_energy = Input(shape=(self.input_steps,), name='role1_energy')
         role1_energy_embedding = layers.Embedding(5, 2, name='role1_energy_embedding')(role1_energy)
-        role2_energy = Input(shape=(1,), name='role2_energy')
+        role2_energy = Input(shape=(self.input_steps,), name='role2_energy')
         role2_energy_embedding = layers.Embedding(5, 2, name='role2_energy_embedding')(role2_energy)
+
+        # 爆气状态
+        role2_baoqi = Input(shape=(self.input_steps,), name='role2_baoqi')
+        role2_baoqi_embedding = layers.Embedding(2, 2, name='role2_baoqi_embedding')(role2_baoqi)
 
         role_position = Input(shape=(self.input_steps, 4), name='role_position')
 
         action_input = Input(shape=(self.input_steps,), name='action_input')
         action_input_embedding = layers.Embedding(self.action_num, 4, name='action_input_embedding')(action_input)
 
-        lstm_role1_action = CuDNNLSTM(64)(
-            concatenate([role1_actions_embedding, role_position, action_input_embedding]))
-        lstm_role2_action = CuDNNLSTM(64)(concatenate([role2_actions_embedding, role_position]))
+        lstm_role1_action = CuDNNLSTM(256)(
+            concatenate([role1_actions_embedding, role_position, action_input_embedding, role1_energy_embedding]))
+        lstm_role2_action = CuDNNLSTM(256)(
+            concatenate([role2_actions_embedding, role_position, role2_energy_embedding, role2_baoqi_embedding]))
         # lstm_position = CuDNNLSTM(128)(position)
 
         concatenated_status = concatenate(
             [lstm_role1_action, lstm_role2_action,
              layers.Flatten()(role1_energy_embedding), layers.Flatten()(role2_energy_embedding)])
-        t_status = layers.Dense(256, kernel_initializer='he_uniform')(concatenated_status)
+        t_status = layers.Dense(512, kernel_initializer='he_uniform')(concatenated_status)
         t_status = layers.LeakyReLU(0.05)(t_status)
-        t_status = layers.Dense(256, kernel_initializer='he_uniform')(t_status)
+        t_status = layers.Dense(512, kernel_initializer='he_uniform')(t_status)
         t_status = BatchNormalization()(t_status)
         t_status = layers.LeakyReLU(0.05)(t_status)
 
         # 这里对dueling_dqn_model做一些修改，防守进攻作为基础value，进攻优势估计加在进攻value之上
         # 攻击动作，则采用基础标量 + 均值为0的向量策略
-        guard = layers.Dense(2)(t_status)
+        # 基本动作类型，前几种是防御或者闪避，最后是攻击
+        base_action_type = 4
+        guard = layers.Dense(base_action_type - 1)(t_status)
         # 进攻
         value = layers.Dense(1)(t_status)
-        value = concatenate([value] * (self.action_num - 2))
-        a = layers.Dense(self.action_num - 2)(t_status)
+        value = concatenate([value] * (self.action_num - base_action_type + 1))
+        a = layers.Dense(self.action_num - base_action_type + 1)(t_status)
         mean = layers.Lambda(lambda x: K.mean(x, axis=1, keepdims=True))(a)
         advantage = layers.Subtract()([a, mean])
         attack = layers.Add()([value, advantage])
         output = concatenate([guard, attack])
         model = Model(
-            [role1_actions, role2_actions, role1_energy, role2_energy, role_position, action_input], output)
+            [role1_actions, role2_actions, role1_energy, role2_energy, role_position,
+             role2_baoqi, action_input],
+            output)
 
         model.compile(optimizer=Adam(lr=0.0001), loss='mse')
 
@@ -270,24 +279,24 @@ class dueling_dqn_model(kof_dqn):
 
     def raw_env_data_to_input(self, raw_data, action):
         # 这里energy改成一个只输入最后一个,这里输出的形状应该就是1，貌似在keras中也能正常运作
-        return [raw_data[:, :, 0], raw_data[:, :, 1], raw_data[:, -1, 2], raw_data[:, -1, 3],
-                raw_data[:, :, 4:8], action]
+        return [raw_data[:, :, 0], raw_data[:, :, 1], raw_data[:, :, 2], raw_data[:, :, 3],
+                raw_data[:, :, 4:8], raw_data[:, :, 8], action]
 
     def empty_env(self):
-        return [[], [], [], [], [], []]
+        return [[], [], [], [], [], [], []]
 
 
 if __name__ == '__main__':
-    model = dueling_dqn_model('kyo')
+    model = dueling_dqn_model('iori')
+    # model = model_1('kyo')
     # model.model_test(1, [1,2])
     # model.model_test(2, [1,2])
-
+    '''
     for i in range(1):
         model.train_model(2, epochs=50)
         model.weight_copy()
-    '''
-    raw_env = model.raw_data_generate(2, [2])
-    train_env, train_index = model.train_env_generate(raw_env)
-    train_reward, n_action = model.train_reward_generate(raw_env, train_env, train_index)
-    # output = model.output_test([ev[50].reshape(1, *ev[50].shape) for ev in train_env])
    '''
+    raw_env = model.raw_data_generate(1, [1])
+    train_env, train_index = model.train_env_generate(raw_env)
+    train_reward, n_action = model.double_dqn_train_data(raw_env, train_env, train_index)
+    # output = model.output_test([ev[50].reshape(1, *ev[50].shape) for ev in train_env])

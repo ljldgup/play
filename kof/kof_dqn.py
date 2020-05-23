@@ -17,7 +17,7 @@ data_dir = os.getcwd()
 env_colomn = ['role1_action', 'role2_action',
               'role1_energy', 'role2_energy',
               'role1_position_x', 'role1_position_y',
-              'role2_position_x', 'role2_position_y', 'role1', 'guard_value',
+              'role2_position_x', 'role2_position_y', 'baoqi', 'role1', 'role2', 'guard_value',
               'role1_combo_count',
               'role1_life', 'role2_life',
               'time', 'coins', ]
@@ -87,15 +87,15 @@ class kof_dqn():
             # 连招收益
             combo_reward = raw_env['role1_combo_count'].diff(1).fillna(0)
             # 由guard，energy_reward，另外几个基本不会并存所以
-            reward = life_reward + combo_reward * 4 + 10 * energy_reward + 3 * guard_reward
+            reward = life_reward + combo_reward * 4 + 10 * energy_reward + 1.5 * guard_reward
 
             # 生成time_steps时间步内的reward
-            # 改成ddqn 因为自动加后面一次报酬，后应该不需要rolling
+            # 改成dqn 因为自动加后面一次报酬，后应该不需要rolling
             # reward_sum = reward.rolling(self.reward_steps, min_periods=1).sum().shift(-self.reward_steps).fillna(0)
 
             # reward_sum太小无法收敛，太大则整体不稳定
             raw_env['raw_reward'] = reward
-            raw_env['reward'] = reward / 80
+            raw_env['reward'] = reward / 40
 
             # 使用log(n+x)-log(n)缩放reward，防止少量特别大的动作影响收敛，目前来看缩放的越小，收敛效果越好。
             # raw_env['reward'] = reward.map(
@@ -117,7 +117,7 @@ class kof_dqn():
             env = raw_env[['role1_action', 'role2_action',
                            'role1_energy', 'role2_energy',
                            'role1_position_x', 'role1_position_y',
-                           'role2_position_x', 'role2_position_y']].loc[index - self.input_steps + 1:index]
+                           'role2_position_x', 'role2_position_y', 'baoqi']].loc[index - self.input_steps + 1:index]
             action = raw_env['action'].loc[index - self.input_steps:index - 1]
 
             # 之前能够去除time_steps个连续数据，在操作
@@ -206,6 +206,8 @@ class kof_dqn():
         time = raw_env['time'].reindex(train_index).diff(1).shift(-1).fillna(1).values
         next_action_reward[time > 0] = 0
         reward += self.reward_decay * next_action_reward
+
+        # 这里报action过多很可能是人物不对
         predict_model_prediction[range(len(train_index)), action] = reward
 
         return [predict_model_prediction, [pre_actions, action.values]]
