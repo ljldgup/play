@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 
-from kof.dqn_models import model_3, model_1, dueling_dqn_model, random_model
+from kof.dqn_models import model_1, dueling_dqn_model, random_model
 from kof.kof_command_mame import operation, restart, simulate
 from kof.operation_split_model import operation_split_model
 
@@ -22,7 +22,7 @@ def train_on_mame(dqn_model, train=True, round_num=10):
     executor = ThreadPoolExecutor(3)
 
     # 每次打完训练次数
-    epochs = 50
+    epochs = 80
     # 每几次数据采取一次行动
     # 存放数据路径
     folder_num = 1
@@ -65,17 +65,18 @@ def train_on_mame(dqn_model, train=True, round_num=10):
                             record_file = '{}.'.format(int(count))
                             np.savetxt(data_dir + '/' + record_file + 'act', np.array(tmp_action))
                             np.savetxt(data_dir + '/' + record_file + 'env', np.array(tmp_env))
-                            model.model_test(folder_num, [count])
+
+                            # 这里改成每次都检测同一组环境，方便对照
+                            model.model_test(folder_num, [1])
 
                             if train:
                                 # 保存此次最好模型
                                 if len(tmp_action) // 500 > max_lines // 500:
                                     max_lines = len(tmp_action)
                                     model.save_model(max_lines)
-                                for i in range(2):
-                                    model.train_model(folder_num, [count], epochs=epochs)
-                                    model.weight_copy()
-                                dqn_model.e_greedy = count / round_num * 0.3 + random.random() * 0.2 + 0.5
+                                model.train_model(folder_num, [count], epochs=epochs)
+                                model.weight_copy()
+                                dqn_model.e_greedy = count / round_num * 0.2 + random.random() * 0.2 + 0.6
                             else:
                                 dqn_model.e_greedy = 0.95
 
@@ -109,14 +110,18 @@ def train_on_mame(dqn_model, train=True, round_num=10):
                     simulate(keys)
                     '''
                     if data[4] > data[6]:
+                        # t = executor.submit(operation, keys, True)
                         executor.submit(operation, keys, True)
                     else:
-                        executor.submit(operation, keys)
+                        # t = executor.submit(operation, keys)
+                        executor.submit(operation, keys, True)
+                    '''
+                    # 如果线程按钮不能正常工作，使用此段
                     # 捕获executor返回的异常，t为submit返回的值
-                    # print(t.exception())
-
-
-
+                    e = t.exception()
+                    if e:
+                        raise e
+                    '''
     except:
         traceback.print_exc()
     finally:
@@ -129,11 +134,10 @@ def train_on_mame(dqn_model, train=True, round_num=10):
 
 if __name__ == '__main__':
     # model = operation_split_model('iori')
-    model = dueling_dqn_model('kyo')
+    model = dueling_dqn_model('iori')
+    # model = model_1('iori')
     # model.load_model('1233')
     # model = random_model('kyo')
     folder_num = train_on_mame(model, True)
-    # model.train_folder(4, 40)
-    for i in range(2):
-        model.train_model(folder_num, epochs=60)
-        model.weight_copy()
+    # model.train_model(folder_num, epochs=60)
+    # model.save_model()
