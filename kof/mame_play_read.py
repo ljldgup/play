@@ -22,7 +22,7 @@ def train_on_mame(dqn_model, train=True, round_num=10):
     executor = ThreadPoolExecutor(3)
 
     # 每次打完训练次数
-    epochs = 80
+    epochs = 60
     # 每几次数据采取一次行动
     # 存放数据路径
     folder_num = 1
@@ -114,7 +114,7 @@ def train_on_mame(dqn_model, train=True, round_num=10):
                         executor.submit(operation, keys, True)
                     else:
                         # t = executor.submit(operation, keys)
-                        executor.submit(operation, keys, True)
+                        executor.submit(operation, keys)
                     '''
                     # 如果线程按钮不能正常工作，使用此段
                     # 捕获executor返回的异常，t为submit返回的值
