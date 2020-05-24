@@ -3,7 +3,7 @@
 cpu = manager:machine().devices[":maincpu"]
 mem = cpu.spaces["program"]
 frames = 1
-freq = 8 
+freq = 6 
 restarted = false
 s = ""
 
@@ -22,8 +22,9 @@ function test()
         then
             -- 对手设定成固定人物
             -- p1 = mem:read_i8(0x10A84e)
-            p2 = mem:read_i8(0x10A85f)
-            if 0 ~= p2
+            p2 = mem:read_i8(0x10A861)
+            -- 貌似这里设置有时会导致选人卡顿，所以等他设完了在该，选人值为FF的情况下不改
+            if p2 > 0
             then
                 mem:write_i8(0x10A85f, 0)
                 mem:write_i8(0x10A860, 0)
@@ -51,10 +52,16 @@ function test()
                 s = s..t.." "
                 t = (mem:read_i16(0x108320)-128)/128
                 s = s..t.." "
+
+                --爆气
+                t = mem:read_i8(0x1083E0)//16
+                s = s..t.." "
                 
                 --1p人物               
                 s = s..mem:read_i8(0x108171).." "
-                --1p的破防值作为计算报酬使用
+                --2p人物               
+                s = s..mem:read_i8(0x108371).." "
+                --1p的破防值作为计算防御报酬使用
                 s = s..mem:read_i8(0x108247).." "
                 
                 --连击，数血量作为reward
