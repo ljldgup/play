@@ -219,9 +219,9 @@ class kof_dqn():
     # batch_size的选取不同，损失表现完全不一样
     def train_model(self, folder, round_nums=[], batch_size=32, epochs=30):
         if not round_nums:
-            round_nums = list(set(
-                [file.split('.')[0] for file in os.listdir('{}/{}'.format(data_dir, folder))]
-            ))
+            files = os.listdir('{}/{}'.format(data_dir, folder))
+            data_files = filter(lambda f: '.' in f, files)
+            round_nums = list(set([file.split('.')[0] for file in data_files]))
 
         raw_env = self.raw_data_generate(folder, round_nums)
         train_env, train_index = self.train_env_generate(raw_env)
@@ -280,9 +280,9 @@ class kof_dqn():
 
     # 分析动作的出现频率和回报率
     def operation_analysis(self, folder):
-        round_nums = list(set(
-            [file.split('.')[0] for file in os.listdir('{}/{}'.format(data_dir, folder))]
-        ))
+        files = os.listdir('{}/{}'.format(data_dir, folder))
+        data_files = filter(lambda f: '.' in f, files)
+        round_nums = list(set([file.split('.')[0] for file in data_files]))
 
         raw_env = self.raw_data_generate(folder, [round_nums[0]])
         raw_env['num'] = round_nums[0]

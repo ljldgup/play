@@ -34,6 +34,8 @@ def train_on_mame(model, train=True, round_num=12):
     data_dir = os.getcwd() + '/' + str(int(folder_num))
     print('数据目录：{}'.format(data_dir))
     os.mkdir(data_dir)
+    with open(data_dir + '/' + model.model_name, 'w') as f:
+        f.write(str(time.asctime(time.localtime(time.time()))))
 
     # 临时存放数据
     tmp_action = []
@@ -137,7 +139,7 @@ if __name__ == '__main__':
     # dqn_model = model_1('iori')
     # model.load_model('1233')
     # model = random_model('kyo')
-    folder_num = train_on_mame(dqn_model, False)
+    folder_num = train_on_mame(dqn_model, True)
     dqn_model.train_model(folder_num, epochs=60)
     dqn_model.save_model()
 
