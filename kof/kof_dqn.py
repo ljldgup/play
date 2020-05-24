@@ -78,17 +78,17 @@ class kof_dqn():
             life_reward = raw_env['role1_life'].diff(1).fillna(0) - raw_env['role2_life'].diff(1).fillna(0)
 
             # 避免浪费大招
-            energy_reward = raw_env['role1_energy'].diff(1).fillna(0)
-            energy_reward = energy_reward.map(lambda x: 0 if x > 0 else x)
+            # energy_reward = raw_env['role1_energy'].diff(1).fillna(0)
+            # energy_reward = energy_reward.map(lambda x: 0 if x > 0 else x)
 
             # 防守的收益
             guard_reward = -raw_env['guard_value'].diff(1).fillna(0)
             guard_reward = guard_reward.map(lambda x: x if x > 0 else 0)
 
             # 连招收益
-            combo_reward = raw_env['role1_combo_count'].diff(1).fillna(0)
+            # combo_reward = raw_env['role1_combo_count'].diff(1).fillna(0)
             # 由guard，energy_reward，另外几个基本不会并存
-            reward = life_reward + 5 * energy_reward + guard_reward
+            reward = life_reward + guard_reward / 5
 
             # 生成time_steps时间步内的reward
             # 改成dqn 因为自动加后面一次报酬，后应该不需要rolling
@@ -98,7 +98,7 @@ class kof_dqn():
             raw_env['raw_reward'] = reward
             raw_env['reward'] = reward / 40
 
-            # 使用log(n+x)-log(n)缩放reward，防止少量特别大的动作影响收敛，目前来看缩放的越小，收敛效果越好。
+            # 使用log(n+x)-log(n)缩放reward，防止少量特别大的动作影响收敛，目前来看适当的缩放，收敛效果好。
             # raw_env['reward'] = reward.map(
             #     lambda x: math.log10(100 + x) - math.log10(100) if x > 0 else -math.log10(100 - x) + math.log10(100))
 

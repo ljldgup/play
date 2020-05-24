@@ -32,7 +32,7 @@ role_commands['kyo'] = [
     ([5], [5]),
 
     ([5], [6]),
-    ([6], [0]),
+    ([5], [0]),
     ([2], [1]),
     ([2, 2], [0, 4]),
     ([5], [3]),
@@ -51,7 +51,7 @@ role_commands['iori'] = [
     # ab
     ([5], [5]),
     # 前跑
-    ([6], [0]),
+    ([5], [0]),
     ([5], [3]),
     ([6, 6], [0, 1]),
     ([2, 2], [0, 1]),
@@ -154,18 +154,9 @@ def restart(role):
     time.sleep(2)
     # 初次载入需要按任意键，不然导致后面开始按键失效
     # 选single play，advanced, 选kyo
-    operation3('as22aaaa')
+    operation3('as22aaaaaaaa')
     # 有时候会卡一下，有可能是设置对手的原因
-    # time.sleep(5)
-    if role == 'kyo':
-        operation3('aa')
-    elif role == 'iori':
-        operation3('8aa')
-    elif role == 'robert':
-        operation3('44aa')
-    elif role == 'ryo':
-        operation3('444aa')
-
+    # 选人全部放到lua脚本进行，这里只是让程序走下去
 
 
 def operation_test(role):

@@ -20,10 +20,10 @@ function test()
         --用掉了一个币，此时在进行游戏
         if  coin~=4 
         then
-            -- 对手设定成固定人物
+            -- 设定成固定人物
             -- p1 = mem:read_i8(0x10A84e)
             p2 = mem:read_i8(0x10A861)
-            -- 貌似这里设置有时会导致选人卡顿，所以等他设完了在该，选人值为FF的情况下不改
+
             if p2 > 0
             then
                 mem:write_i8(0x10A85f, 0)
@@ -31,6 +31,14 @@ function test()
                 mem:write_i8(0x10A861, 0)
                 --改颜色
                 mem:write_i8(0x10A862, 1)
+                
+                -- 貌似这里设置有时会导致选人卡顿，所以脚本直接一起选
+                mem:write_i8(0x10A84E, 27)
+                mem:write_i8(0x10A84F, 27)
+                mem:write_i8(0x10A850, 27)
+                
+                --改颜色
+                mem:write_i8(0x10A851, 0)
             end
             
             countdown = mem:read_i16(0x10A83A)
