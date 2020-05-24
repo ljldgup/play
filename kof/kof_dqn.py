@@ -87,8 +87,8 @@ class kof_dqn():
 
             # 连招收益
             combo_reward = raw_env['role1_combo_count'].diff(1).fillna(0)
-            # 由guard，energy_reward，另外几个基本不会并存所以
-            reward = life_reward + combo_reward * 4 + 10 * energy_reward + guard_reward
+            # 由guard，energy_reward，另外几个基本不会并存
+            reward = life_reward + 5 * energy_reward + guard_reward
 
             # 生成time_steps时间步内的reward
             # 改成dqn 因为自动加后面一次报酬，后应该不需要rolling
@@ -293,19 +293,18 @@ class kof_dqn():
 
         # 注意这里对num，action进行聚类，之后他们都在层次化索引上
         # 所以需要unstack，将action移到列名,才能绘制出按文件名分开的柱状体
-        reward_chart = raw_env.groupby(['num', 'action']).sum()['reward'].unstack().plot.bar()
+        reward_chart = raw_env.groupby(['num', 'action']).sum()['reward'].unstack().plot.bar(title='reward')
         # 调整图例
         # reward_chart.legend(loc='right')
         reward_chart.legend(bbox_to_anchor=(1.0, 1.0))
-
-        # 注意这里groupby(['num', 'action']) 后结果任然是有很多列，打印的时候看不出来，但操作会出错
+        # 注意这里groupby(['action', 'num']) 后结果任然是有很多列，打印的时候看不出来，但操作会出错
         # 因为count()，可以随意取一列
-        action_count = raw_env.groupby(['num', 'action']).count()['reward'].unstack().fillna(0)
+        action_count = raw_env.groupby(['action', 'num']).count()['reward'].unstack().fillna(0)
 
         # action_count 进行unstack后是Dataframe，action_total则是Series
-        # 所以action_total是对action聚类，使得两者列能够列对齐
-        action_total = raw_env.groupby(['action']).count()['num']
-        freq_chart = (action_count / action_total).plot.bar()
+        # 所以action_total是对第二个列聚类，使得两者列能够列对齐
+        action_total = raw_env.groupby(['num']).count()['action']
+        freq_chart = (action_count / action_total).plot.bar(title='freq')
         freq_chart.legend(bbox_to_anchor=(1.0, 1.0))
 
         for action in action_count:

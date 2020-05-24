@@ -67,16 +67,15 @@ def train_on_mame(model, train=True, round_num=12):
                             np.savetxt(data_dir + '/' + record_file + 'act', np.array(tmp_action))
                             np.savetxt(data_dir + '/' + record_file + 'env', np.array(tmp_env))
 
-                            # 这里改成每次都检测同一组环境，方便对照
-                            model.model_test(folder_num, [1])
-
-                            if train and count % train_interval == 0:
-                                model.train_model(folder_num, range(count - train_interval + 1, count + 1),
-                                                  epochs=epochs)
-                                model.save_model()
-                                model.e_greedy = count / round_num * 0.2 + random.random() * 0.2 + 0.6
+                            # model.model_test(folder_num, [count])
+                            if train:
+                                if count % train_interval == 0:
+                                    model.train_model(folder_num, range(count - train_interval + 1, count + 1),
+                                                      epochs=epochs)
+                                    model.save_model()
+                                model.e_greedy = count / round_num * 0.3 + random.random() * 0.2 + 0.6
                             else:
-                                model.e_greedy = 0.95
+                                model.e_greedy = 0.99
 
                     tmp_action = []
                     tmp_env = []
@@ -133,12 +132,13 @@ def train_on_mame(model, train=True, round_num=12):
 
 if __name__ == '__main__':
     # model = operation_split_model('iori')
-    # dqn_model = dueling_dqn_model('iori')
+    dqn_model = dueling_dqn_model('iori')
     # dqn_model = model_2('iori')
-    dqn_model = model_1('iori')
+    # dqn_model = model_1('iori')
     # model.load_model('1233')
     # model = random_model('kyo')
-    folder_num = train_on_mame(dqn_model, True)
-    for i in range(2):
-        dqn_model.train_model(folder_num, epochs=60)
-        dqn_model.save_model()
+    folder_num = train_on_mame(dqn_model, False)
+    dqn_model.train_model(folder_num, epochs=60)
+    dqn_model.save_model()
+
+    dqn_model.operation_analysis(folder_num)

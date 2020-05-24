@@ -86,7 +86,7 @@ class model_1(kof_dqn):
             [role1_actions, role2_actions, role1_energy, role2_energy,
              role_position, role2_baoqi, action_input], output)
 
-        model.compile(optimizer=Adam(lr=0.0001), loss='mse')
+        model.compile(optimizer=Adam(lr=0.00001), loss='mse')
 
         return model
 
@@ -169,7 +169,7 @@ class model_2(kof_dqn):
              role2_baoqi, action_input],
             output)
 
-        model.compile(optimizer=Adam(lr=0.0001), loss='mse')
+        model.compile(optimizer=Adam(lr=0.00001), loss='mse')
 
         return model
 
@@ -242,7 +242,7 @@ class dueling_dqn_model(kof_dqn):
              role2_baoqi, action_input],
             q)
 
-        model.compile(optimizer=Adam(lr=0.0001), loss='mse')
+        model.compile(optimizer=Adam(lr=0.00001), loss='mse')
 
         return model
 
@@ -256,11 +256,11 @@ class dueling_dqn_model(kof_dqn):
 
 
 if __name__ == '__main__':
-    model = dueling_dqn_model('iori')
-    # model = model_1('iori')
+    # model = dueling_dqn_model('iori')
+    model = model_1('iori')
     # model.model_test(1, [1,2])
     # model.model_test(2, [1,2])
-    t = model.operation_analysis(12)
+    t = model.operation_analysis(1)
     '''
     for i in range(2):
         model.train_model(6, epochs=50)
