@@ -1,6 +1,7 @@
 import math
 import os
 import random
+import time
 
 import pandas as pd
 import numpy as np
@@ -40,7 +41,7 @@ class kof_dqn():
         self.action_num = len(role_commands[role])
         self.target_model = self.build_model()
         self.predict_model = self.build_model()
-
+        self.record = self.get_record()
         if os.path.exists('{}/model/{}_{}.index'.format(data_dir, self.role, self.model_name)):
             print('load model {}'.format(self.role))
             self.load_model()
@@ -87,7 +88,7 @@ class kof_dqn():
             # 连招收益
             combo_reward = raw_env['role1_combo_count'].diff(1).fillna(0)
             # 由guard，energy_reward，另外几个基本不会并存所以
-            reward = life_reward + combo_reward * 4 + 10 * energy_reward + 1.5 * guard_reward
+            reward = life_reward + combo_reward * 4 + 10 * energy_reward + guard_reward
 
             # 生成time_steps时间步内的reward
             # 改成dqn 因为自动加后面一次报酬，后应该不需要rolling
@@ -232,6 +233,8 @@ class kof_dqn():
                                batch_size=batch_size,
                                epochs=epochs, verbose=2)
 
+        self.record['total_epochs'] += epochs
+
     def weight_copy(self):
         self.target_model.set_weights(self.predict_model.get_weights())
 
@@ -245,6 +248,9 @@ class kof_dqn():
         else:
             self.target_model.save_weights('{}/model/{}_{}'.format(data_dir, self.role, self.model_name))
 
+        with open('{}/model/{}_{}_record'.format(data_dir, self.role, self.model_name), 'w') as r:
+            r.write(str(self.record))
+
     def load_model(self, name=None):
         if name:
             self.predict_model.load_weights('{}/model/{}_{}_{}'.format(data_dir, self.role, self.model_name, name))
@@ -255,12 +261,57 @@ class kof_dqn():
     def build_model(self):
         pass
 
-    # 把原始环境输入，分割成模型能接受的输入
+    # 把原始环境输入，分割成模型能接受的输入，在具体的模型中实现
     def raw_env_data_to_input(self, raw_data, action):
         pass
 
     def empty_env(self):
         pass
+
+    def get_record(self):
+        if os.path.exists('{}/model/{}_{}_record'.format(data_dir, self.role, self.model_name)):
+            with open('{}/model/{}_{}_record'.format(data_dir, self.role, self.model_name), 'r') as r:
+                record = eval(r.read())
+        else:
+            record = {}
+            record['total_epochs'] = 0
+            record['begin_time'] = time.asctime(time.localtime(time.time()))
+        return record
+
+    # 分析动作的出现频率和回报率
+    def operation_analysis(self, folder):
+        round_nums = list(set(
+            [file.split('.')[0] for file in os.listdir('{}/{}'.format(data_dir, folder))]
+        ))
+
+        raw_env = self.raw_data_generate(folder, [round_nums[0]])
+        raw_env['num'] = round_nums[0]
+        for i in range(1, len(round_nums)):
+            t = self.raw_data_generate(folder, [round_nums[i]])
+            t['num'] = round_nums[i]
+            raw_env = pd.concat([raw_env, t])
+
+        # 注意这里对num，action进行聚类，之后他们都在层次化索引上
+        # 所以需要unstack，将action移到列名,才能绘制出按文件名分开的柱状体
+        reward_chart = raw_env.groupby(['num', 'action']).sum()['reward'].unstack().plot.bar()
+        # 调整图例
+        # reward_chart.legend(loc='right')
+        reward_chart.legend(bbox_to_anchor=(1.0, 1.0))
+
+        # 注意这里groupby(['num', 'action']) 后结果任然是有很多列，打印的时候看不出来，但操作会出错
+        # 因为count()，可以随意取一列
+        action_count = raw_env.groupby(['num', 'action']).count()['reward'].unstack().fillna(0)
+
+        # action_count 进行unstack后是Dataframe，action_total则是Series
+        # 所以action_total是对action聚类，使得两者列能够列对齐
+        action_total = raw_env.groupby(['action']).count()['num']
+        freq_chart = (action_count / action_total).plot.bar()
+        freq_chart.legend(bbox_to_anchor=(1.0, 1.0))
+
+        for action in action_count:
+            action_count[action]
+
+        return raw_env
 
     # 测试模型数据是否匹配，
     # 测试模型输出是否过于单一
@@ -299,7 +350,6 @@ class kof_dqn():
         # 各个命令的百分比
         for key in key_freq.keys():
             print('{} {:.2f}%'.format(key, key_freq[key] / len(rst) * 100))
-
         # 重置 e_greedy
         # self.e_greedy = self.action_num / len(key_freq.keys()) * 0.8 + 0.2
         # print(t_act)
