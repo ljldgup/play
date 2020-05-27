@@ -78,17 +78,17 @@ class kof_dqn():
             life_reward = raw_env['role1_life'].diff(1).fillna(0) - raw_env['role2_life'].diff(1).fillna(0)
 
             # 避免浪费大招
-            # energy_reward = raw_env['role1_energy'].diff(1).fillna(0)
-            # energy_reward = energy_reward.map(lambda x: 0 if x > 0 else x)
+            energy_reward = raw_env['role1_energy'].diff(1).fillna(0)
+            energy_reward = energy_reward.map(lambda x: 0 if x > 0 else x)
 
             # 防守的收益
             guard_reward = -raw_env['guard_value'].diff(1).fillna(0)
             guard_reward = guard_reward.map(lambda x: x if x > 0 else 0)
 
             # 连招收益
-            # combo_reward = raw_env['role1_combo_count'].diff(1).fillna(0)
+            combo_reward = raw_env['role1_combo_count'].diff(1).fillna(0)
             # 由guard，energy_reward，另外几个基本不会并存
-            reward = life_reward + guard_reward / 5
+            reward = life_reward + guard_reward / 5 + energy_reward + combo_reward
 
             # 生成time_steps时间步内的reward
             # 改成dqn 因为自动加后面一次报酬，后应该不需要rolling
@@ -291,9 +291,12 @@ class kof_dqn():
             t['num'] = round_nums[i]
             raw_env = pd.concat([raw_env, t])
 
+        raw_env['num'] = raw_env['num'].astype('int')
+        raw_env['action'] = raw_env['action'].astype('int')
+
         # 注意这里对num，action进行聚类，之后他们都在层次化索引上
         # 所以需要unstack，将action移到列名,才能绘制出按文件名分开的柱状体
-        reward_chart = raw_env.groupby(['num', 'action']).sum()['reward'].unstack().plot.bar(title='reward')
+        reward_chart = raw_env.groupby(['action', 'num']).sum()['reward'].unstack().plot.bar(title='reward')
         # 调整图例
         # reward_chart.legend(loc='right')
         reward_chart.legend(bbox_to_anchor=(1.0, 1.0))
@@ -306,9 +309,6 @@ class kof_dqn():
         action_total = raw_env.groupby(['num']).count()['action']
         freq_chart = (action_count / action_total).plot.bar(title='freq')
         freq_chart.legend(bbox_to_anchor=(1.0, 1.0))
-
-        for action in action_count:
-            action_count[action]
 
         return raw_env
 

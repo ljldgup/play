@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 
-from kof.dqn_models import model_1, dueling_dqn_model, random_model, model_2
+from kof.dqn_models import model_1, dueling_dqn_model, random_model, model_2, model_3
 from kof.kof_command_mame import operation, restart, simulate
 from kof.operation_split_model import operation_split_model
 
@@ -19,9 +19,9 @@ mame_dir = 'D:/game/mame32/'
 
 
 def train_on_mame(model, train=True, round_num=12):
-    executor = ThreadPoolExecutor(3)
+    executor = ThreadPoolExecutor(2)
     # 每次打完训练次数
-    epochs = 60
+    epochs = 40
 
     # 存放数据路径
     folder_num = 1
@@ -54,7 +54,6 @@ def train_on_mame(model, train=True, round_num=12):
             if line:
                 # 去掉\n
                 data = list(map(float, line[:-1].split(" ")))
-                # print(data)
 
                 # 根据4个币判断是否game over，输了直接重新开始不续币
                 if data[-1] == 4:
@@ -72,12 +71,14 @@ def train_on_mame(model, train=True, round_num=12):
                             # model.model_test(folder_num, [count])
                             if train:
                                 if count % train_interval == 0:
-                                    model.train_model(folder_num, range(count - train_interval + 1, count + 1),
-                                                      epochs=epochs)
+                                    for i in range(2):
+                                        model.train_model(folder_num, range(count - train_interval + 1, count + 1),
+                                                          epochs=epochs)
                                     model.save_model()
-                                model.e_greedy = count / round_num * 0.3 + random.random() * 0.2 + 0.6
+                                # 采用双曲线逼近1，起初greedy很小，但变化快,第五局左右greedy到1，之后缓慢向1逼近
+                                model.e_greedy = -1 / (1.5 * count) + 1
                             else:
-                                model.e_greedy = 0.99
+                                model.e_greedy = 0.98
 
                     tmp_action = []
                     tmp_env = []
@@ -134,9 +135,11 @@ def train_on_mame(model, train=True, round_num=12):
 
 if __name__ == '__main__':
     # model = operation_split_model('iori')
-    dqn_model = dueling_dqn_model('iori')
+    # dqn_model = dueling_dqn_model('iori')
+    # dqn_model = model_3('iori')
     # dqn_model = model_2('iori')
-    # dqn_model = model_1('iori')
+    dqn_model = model_1('iori')
+    # dqn_model = random_model('iori')
     # model.load_model('1233')
     # model = random_model('kyo')
     folder_num = train_on_mame(dqn_model, True)
