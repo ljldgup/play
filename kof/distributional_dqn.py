@@ -68,17 +68,19 @@ class DistributionalDQN(KofAgent):
              role2_actions_embedding, role2_energy_embedding, role2_baoqi_embedding])
 
         lstm_status = CuDNNLSTM(512)(concatenate_status)
-        t_status = BatchNormalization()(lstm_status)
+        # bn层通常加在线性输出(cnn,fc)后面，应为线性输出分布均衡，加在rnn后面效果很差
+        # t_status = BatchNormalization()(lstm_status)
 
         probability_distribution_layers = []
         for a in range(self.action_num):
-            t_layers = layers.Dense(self.N, kernel_initializer='he_uniform',
-                                    name='action_{}_distribution'.format(a))(t_status)
-            t_layers = layers.LeakyReLU(0.05)(t_layers)
+            t_layer = layers.Dense(self.N, kernel_initializer='he_uniform',
+                                   name='action_{}_distribution'.format(a))(lstm_status)
+            t_layer = BatchNormalization()(t_layer)
+            t_layer = layers.LeakyReLU(0.05)(t_layer)
             # 注意这里softmax 不用he_uniform初始化
-            t_layers = layers.Dense(self.N, activation='softmax',
-                                    name='action_{}_probability'.format(a))(t_layers)
-            probability_distribution_layers.append(t_layers)
+            t_layer = layers.Dense(self.N, activation='softmax',
+                                   name='action_{}_probability'.format(a))(t_layer)
+            probability_distribution_layers.append(t_layer)
         probability_output = concatenate(probability_distribution_layers, axis=1)
         probability_output = layers.Reshape((self.action_num, self.N))(probability_output)
 
@@ -185,9 +187,10 @@ if __name__ == '__main__':
     for i in [0]:
         try:
             print('train ', i)
-            for e in range(2):
-                model.train_model(i, [1], epochs=40)
-                model.weight_copy()
+            for num in range(10):
+                for e in range(2):
+                    model.train_model(i, [1], epochs=40)
+                    model.weight_copy()
         except:
             # print('no data in ', i)
             traceback.print_exc()

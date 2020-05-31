@@ -29,10 +29,11 @@ transformer
 data_dir = os.getcwd()
 
 
-# 位置距离卷积 + lstm + 正常dueling dqn
+# 正常dueling dqn
+# 位置距离卷积 + lstm + fc
 # 将衰减降低至0.94，去掉了上次动作输入，将1p embedding带宽扩展到8，后效果比之前好了很多
-# 但动作集中再5c和214a上
-class DuelingDQN(KofAgent):
+# 但动作比较集中
+class DoubleDQN(KofAgent):
 
     def __init__(self, role, model_name='dueling_dqn', reward_decay=0.96):
         super().__init__(role=role, model_name=model_name, reward_decay=reward_decay)
@@ -98,10 +99,11 @@ class DuelingDQN(KofAgent):
         return [[], [], [], [], [], [], []]
 
 
-# 修改dueling dqn,是的value分成防守，闪避，攻击，并在攻击value上加攻击动作advantage
-class model_1(DuelingDQN):
+# 普通DDQN，输出分开成多个fc，再合并
+# 这种方法违背网络共享信息的特点
+class model_1(DoubleDQN):
     def __init__(self, role, reward_decay=0.96):
-        super().__init__(role=role, model_name='m2', reward_decay=reward_decay)
+        super().__init__(role=role, model_name='m1', reward_decay=reward_decay)
 
     def build_model(self):
         role1_actions = Input(shape=(self.input_steps,), name='role1_actions')
@@ -134,24 +136,21 @@ class model_1(DuelingDQN):
              role2_actions_embedding, role2_energy_embedding, role2_baoqi_embedding])
         lstm_status = CuDNNLSTM(512)(concatenate_status)
 
-        t_status = layers.Dense(512, kernel_initializer='he_uniform')(lstm_status)
-        t_status = layers.LeakyReLU(0.05)(t_status)
-        t_status = layers.Dense(512, kernel_initializer='he_uniform')(t_status)
+        t_status = layers.Dense(256, kernel_initializer='he_uniform')(lstm_status)
         t_status = BatchNormalization()(t_status)
         t_status = layers.LeakyReLU(0.05)(t_status)
+        output_layers = []
+        for a in range(self.action_num):
+            t_layer = layers.Dense(128, kernel_initializer='he_uniform')(t_status)
+            t_layer = BatchNormalization()(t_layer)
+            t_layer = layers.LeakyReLU(0.05)(t_layer)
+            # 注意这里softmax 不用he_uniform初始化
+            t_layer = layers.Dense(1, name='action_{}'.format(a))(t_layer)
+            output_layers.append(t_layer)
 
-        base_action_type = 4
-        guard = layers.Dense(base_action_type - 1)(t_status)
-        value = layers.Dense(1)(t_status)
-        value = concatenate([value] * (self.action_num - base_action_type + 1))
-        a = layers.Dense(self.action_num - base_action_type + 1)(t_status)
-        mean = layers.Lambda(lambda x: K.mean(x, axis=1, keepdims=True))(a)
-        advantage = layers.Subtract()([a, mean])
-        attack = layers.Add()([value, advantage])
-        output = concatenate([guard, attack])
-        model = Model(
-            [role1_actions, role2_actions, role1_energy, role2_energy, role1_x_y, role2_x_y,
-             role2_baoqi], output)
+        output = concatenate(output_layers)
+        model = Model([role1_actions, role2_actions, role1_energy, role2_energy, role1_x_y, role2_x_y,
+                       role2_baoqi], output)
 
         model.compile(optimizer=Adam(lr=0.00004), loss='mse')
 
@@ -159,9 +158,9 @@ class model_1(DuelingDQN):
 
 
 # 两个角色分开做lstm
-class model_2(DuelingDQN):
+class model_2(DoubleDQN):
 
-    def __init__(self, role, reward_decay=0.96):
+    def __init__(self, role, reward_decay=0.98):
         super().__init__(role=role, model_name='m2', reward_decay=reward_decay)
 
     def build_model(self):
@@ -220,20 +219,21 @@ class model_2(DuelingDQN):
 
 
 if __name__ == '__main__':
-    model = model_2('iori')
+    model = model_1('iori')
     # model = DuelingDQN('iori')
 
     # model.model_test(1, [1,2])
     # model.model_test(2, [1,2])
-
+    # model.predict_model.summary()
     # t = model.operation_analysis(5)
-
-    for i in [0]:
+    #
+    for i in [18, 19, 21, 22]:
         try:
             print('train ', i)
-            for e in range(2):
-                model.train_model(i, epochs=40)
-                model.weight_copy()
+            for r in range(10):
+                for e in range(2):
+                    model.train_model(i, [r], epochs=40)
+                    model.weight_copy()
         except:
             # print('no data in ', i)
             traceback.print_exc()

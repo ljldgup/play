@@ -92,8 +92,8 @@ class KofAgent:
             energy_reward = energy_reward.map(lambda x: 0 if x > 0 else x)
 
             # 防守的收益
-            guard_reward = -raw_env['guard_value'].diff(1).fillna(0)
-            guard_reward = guard_reward.map(lambda x: x if x > 0 else 0)
+            # guard_reward = -raw_env['guard_value'].diff(1).fillna(0)
+            # guard_reward = guard_reward.map(lambda x: x if x > 0 else 0)
 
             # 连招收益
             combo_reward = raw_env['role1_combo_count'].diff(1).fillna(0)
@@ -105,7 +105,7 @@ class KofAgent:
             # reward_sum = reward.rolling(self.reward_steps, min_periods=1).sum().shift(-self.reward_steps).fillna(0)
 
             # reward_sum太小无法收敛，太大则整体不稳定
-            raw_env['raw_reward'] = reward
+            raw_env['raw_reward'] = reward + energy_reward
             raw_env['reward'] = reward / 40
 
             # 使用log(n+x)-log(n)缩放reward，防止少量特别大的动作影响收敛，目前来看适当的缩放，收敛效果好。
