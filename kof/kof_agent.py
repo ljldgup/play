@@ -9,11 +9,21 @@ from tensorflow.python.keras import Model
 
 from kof.kof_command_mame import global_set, role_commands
 
-'''
-# 把图像拷贝后重新训练一下
-# blood_clf = if_blood_train()
-# blood_clf = read_simple_model('svm_blood_judge')
-'''
+
+class RandomAgent:
+    def __init__(self, role):
+        self.model_name = 'random'
+        self.role = role
+        self.action_num = len(role_commands[role])
+        global_set(role)
+
+    def choose_action(self, *args):
+        return random.randint(0, self.action_num - 1)
+
+    def save_model(self):
+        pass
+
+
 data_dir = os.getcwd()
 env_colomn = ['role1_action', 'role2_action',
               'role1_energy', 'role2_energy',
@@ -24,21 +34,20 @@ env_colomn = ['role1_action', 'role2_action',
               'time', 'coins', ]
 
 
-class kof_dqn():
+class KofAgent:
     def __init__(self, role, model_name,
-                 reward_decay=0.98,
-                 e_greedy=0.7,
-                 input_steps=3,
-                 reward_steps=3):
+                 reward_decay=0.94,
+                 input_steps=6):
         self.role = role
         self.model_name = model_name
         self.reward_decay = reward_decay
-        self.e_greedy = e_greedy
-        # 输入步数，计算reward的步数
+        self.e_greedy = 0.95
+        # 输入步数
         self.input_steps = input_steps
-        self.reward_steps = reward_steps
+
         global_set(role)
         self.action_num = len(role_commands[role])
+
         self.target_model = self.build_model()
         self.predict_model = self.build_model()
         self.record = self.get_record()
@@ -61,7 +70,8 @@ class kof_dqn():
             if os.path.exists('{}/{}/{}.env'.format(data_dir, folder, round_nums[0])):
                 raw_env = np.loadtxt('{}/{}/{}.env'.format(data_dir, folder, round_nums[0]))
                 raw_actions = np.loadtxt('{}/{}/{}.act'.format(data_dir, folder, round_nums[0]))
-
+            else:
+                raise Exception('no file')
             for i in range(1, len(round_nums)):
                 if os.path.exists('{}/{}/{}.env'.format(data_dir, folder, round_nums[i])):
                     # print(i)
@@ -88,7 +98,7 @@ class kof_dqn():
             # 连招收益
             combo_reward = raw_env['role1_combo_count'].diff(1).fillna(0)
             # 由guard，energy_reward，另外几个基本不会并存
-            reward = life_reward + guard_reward / 5 + energy_reward + combo_reward
+            reward = life_reward + combo_reward
 
             # 生成time_steps时间步内的reward
             # 改成dqn 因为自动加后面一次报酬，后应该不需要rolling
@@ -143,26 +153,10 @@ class kof_dqn():
 
         return [train_env_data, train_index]
 
-    # 最开始用的不考虑长期收益的模型，在pandas钟使用rolling来使其拥有少量的长期收益
-    # reward中无关动作随着模型改变而改变
-    # 为了便于重新生成，将其分离
+    # 最开始用的不考虑长期收益的模型，在pandas钟使用rolling来使其拥有少量的长期效果
+    # 现在使用该函数实现多态
     def train_reward_generate(self, raw_env, train_env, train_index):
-
-        # 筛选并调整reward顺序
-        reward = raw_env['reward'].reindex(train_index)
-        action = raw_env['action'].reindex(train_index)
-        action = action.astype('int')
-        # 注意这里使用预测模型输出作为y，否则会导致模型不稳定
-        prediction = self.predict_model.predict(train_env)
-        # 用来确认生成对象是否正确
-        pre_actions = prediction.argmax(axis=1)
-        # pre_prediction = prediction.copy().
-
-        # 注意这里通过[[...],[...]]直接选择里局矩阵里的多个位置，并进行赋值
-        # 这里直接给pandas series的格式也可以，可迭代貌似就行
-        prediction[range(len(train_index)), action] = reward
-
-        return [prediction, [pre_actions, action.values]]
+        return [None, [None, None]]
 
     def nature_dqn_reward_generate(self, raw_env, train_env, train_index):
         reward = raw_env['reward'].reindex(train_index)
@@ -207,7 +201,11 @@ class kof_dqn():
         time = raw_env['time'].reindex(train_index).diff(1).shift(-1).fillna(1).values
         next_action_reward[time > 0] = 0
         reward += self.reward_decay * next_action_reward
-
+        # reward_abs = abs(reward)
+        # td_error = reward - predict_model_prediction[range(len(train_index)), action]
+        # 保留报酬绝对值较大的操作，70%
+        #valve_arg = reward_abs.argsort()[int(0.3 * len(reward_abs))]
+        #index = reward_abs > reward_abs[valve_arg]
         # 这里报action过多很可能是人物不对
         predict_model_prediction[range(len(train_index)), action] = reward
 
@@ -225,7 +223,7 @@ class kof_dqn():
 
         raw_env = self.raw_data_generate(folder, round_nums)
         train_env, train_index = self.train_env_generate(raw_env)
-        train_reward, action = self.double_dqn_train_data(raw_env, train_env, train_index)
+        train_reward, action = self.train_reward_generate(raw_env, train_env, train_index)
 
         random_index = np.random.permutation(len(train_index))
         # verbose参数控制输出，这里每个epochs输出一次
@@ -261,7 +259,7 @@ class kof_dqn():
     def build_model(self):
         pass
 
-    # 把原始环境输入，分割成模型能接受的输入，在具体的模型中实现
+    # 游戏运行时把原始环境输入，分割成模型能接受的输入，在具体的模型中实现
     def raw_env_data_to_input(self, raw_data, action):
         pass
 
@@ -273,9 +271,7 @@ class kof_dqn():
             with open('{}/model/{}_{}_record'.format(data_dir, self.role, self.model_name), 'r') as r:
                 record = eval(r.read())
         else:
-            record = {}
-            record['total_epochs'] = 0
-            record['begin_time'] = time.asctime(time.localtime(time.time()))
+            record = {'total_epochs': 0, 'begin_time': time.asctime(time.localtime(time.time()))}
         return record
 
     # 分析动作的出现频率和回报率
@@ -325,8 +321,9 @@ class kof_dqn():
 
         t_env = raw_env.values
         t_act = raw_env['action'].values
-        t_env = t_env.reshape(1, *t_env.shape)
-        t_act = t_act.reshape(1, *t_act.shape)
+        t_env = np.expand_dims(t_env, 0)
+        t_act = np.expand_dims(t_act, 0)
+
         rst = []
         for i in range(1, len(t_env[0]) - self.input_steps - 1):
             t1 = t_env[:, i:i + self.input_steps, :]

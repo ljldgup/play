@@ -21,10 +21,10 @@ env_colomn = ['role1_action', 'role2_action',
 
 
 # 把摇杆和按键分开
-class operation_split_model():
+class OperationSplitModel:
 
     def __init__(self, role, model_name='operation_split_model',
-                 reward_decay=0.99,
+                 reward_decay=0.94 ,
                  e_greedy=0.7,
                  # 这里把输入步数增加，并提高lua中的采样频率
                  input_steps=8,
@@ -331,7 +331,7 @@ class operation_split_model():
 
 
 if __name__ == '__main__':
-    model = operation_split_model('iori')
+    model = OperationSplitModel('iori')
     # model.model_test(1, [1,2])
     # model.model_test(2, [1,2])
-    #model.train_model(4, [1])
+    # model.train_model(4, [1])
