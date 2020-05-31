@@ -7,9 +7,9 @@ from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 
-from kof.dqn_models import model_1, dueling_dqn_model, random_model, model_2, model_3
+from kof.distributional_dqn import DistributionalDQN
+from kof.dqn_models import model_1, model_2, DuelingDQN
 from kof.kof_command_mame import operation, restart, simulate
-from kof.operation_split_model import operation_split_model
 
 '''
 mame.ini keyboardprovider设置成win32不然无法接受键盘输入
@@ -70,21 +70,22 @@ def train_on_mame(model, train=True, round_num=12):
 
                             # model.model_test(folder_num, [count])
                             if train:
+                                # 加个间隔，打train_interval局训练一次
                                 if count % train_interval == 0:
                                     for i in range(2):
                                         model.train_model(folder_num, range(count - train_interval + 1, count + 1),
                                                           epochs=epochs)
                                     model.save_model()
-                                # 采用双曲线逼近1，起初greedy很小，但变化快,第五局左右greedy到1，之后缓慢向1逼近
-                                model.e_greedy = -1 / (1.5 * count) + 1
-                            else:
-                                model.e_greedy = 0.98
+                                # 采用双曲线逼近1，起初greedy很小，但前期变化快，之后缓慢向常数项
 
                     tmp_action = []
                     tmp_env = []
                     count += 1
 
                     print("重开")
+                    # 这里需要在第一局之前设置
+                    if train:
+                        model.e_greedy = -1 / count + 1.1
                     print('greedy:', model.e_greedy)
 
                     time.sleep(4)
@@ -115,12 +116,15 @@ def train_on_mame(model, train=True, round_num=12):
                     else:
                         # t = executor.submit(operation, keys)
                         executor.submit(operation, keys)
+
                     '''
                     # 如果线程按钮不能正常工作，使用此段
                     # 捕获executor返回的异常，t为submit返回的值
+
                     e = t.exception()
                     if e:
                         raise e
+
                     '''
 
     except:
@@ -134,16 +138,15 @@ def train_on_mame(model, train=True, round_num=12):
 
 
 if __name__ == '__main__':
-    # model = operation_split_model('iori')
-    # dqn_model = dueling_dqn_model('iori')
-    # dqn_model = model_3('iori')
+    dqn_model = DistributionalDQN('iori')
+    # dqn_model = DuelingDQN('iori')
     # dqn_model = model_2('iori')
-    dqn_model = model_1('iori')
+    # dqn_model = model_1('iori')
     # dqn_model = random_model('iori')
     # model.load_model('1233')
     # model = random_model('kyo')
     folder_num = train_on_mame(dqn_model, True)
-    dqn_model.train_model(folder_num, epochs=60)
+    dqn_model.train_model(folder_num, epochs=30)
     dqn_model.save_model()
 
     dqn_model.operation_analysis(folder_num)
