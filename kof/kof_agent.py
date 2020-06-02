@@ -7,7 +7,9 @@ import pandas as pd
 import numpy as np
 from tensorflow.python.keras import Model
 
+from kof import sumtree
 from kof.kof_command_mame import global_set, role_commands
+from kof.sumtree import SumTree
 
 
 class RandomAgent:
@@ -56,6 +58,8 @@ class KofAgent:
             self.load_model()
         else:
             self.save_model()
+
+        self.train_reward_generate = self.nature_dqn_reward_generate
 
     def choose_action(self, raw_data, action, random_choose=False):
         if random_choose or random.random() > self.e_greedy:
@@ -106,7 +110,7 @@ class KofAgent:
 
             # reward_sum太小无法收敛，太大则整体不稳定
             raw_env['raw_reward'] = reward + energy_reward
-            raw_env['reward'] = reward / 40
+            raw_env['reward'] = reward / 80
 
             # 使用log(n+x)-log(n)缩放reward，防止少量特别大的动作影响收敛，目前来看适当的缩放，收敛效果好。
             # raw_env['reward'] = reward.map(
@@ -158,6 +162,7 @@ class KofAgent:
     def train_reward_generate(self, raw_env, train_env, train_index):
         return [None, [None, None]]
 
+    # nature dqn 训练数据生成
     def nature_dqn_reward_generate(self, raw_env, train_env, train_index):
         reward = raw_env['reward'].reindex(train_index)
         action = raw_env['action'].reindex(train_index)
@@ -178,38 +183,15 @@ class KofAgent:
         # 最后一此操作，下一次的报酬为0
         next_action_reward[time > 0] = 0
         reward += next_action_reward * self.reward_decay
+
+        td_error = reward - predict_model_prediction[range(len(train_index)), action]
+
         predict_model_prediction[range(len(train_index)), action.values] = reward
 
-        return [predict_model_prediction, [pre_actions, action]]
+        return [predict_model_prediction, td_error, [pre_actions, action]]
 
-    def double_dqn_train_data(self, raw_env, train_env, train_index):
-        reward = raw_env['reward'].reindex(train_index)
-        action = raw_env['action'].reindex(train_index)
-        action = action.astype('int')
-
-        target_model_prediction = self.target_model.predict(train_env)
-        predict_model_prediction = self.predict_model.predict(train_env)
-        # pre_prediction = predict_model_prediction.copy()
-        pre_actions = predict_model_prediction.argmax(axis=1)
-
-        # 由训练模型选动作，target模型根据动作估算q值，不关心是否最大
-        # yj=Rj + γQ′(ϕ(S′j), argmaxa′Q(ϕ(S′j), a, w), w′)
-        next_max_reward_action = predict_model_prediction.argmax(axis=1)
-        next_action_reward = target_model_prediction[range(len(train_index)), next_max_reward_action.astype('int')]
-
-        next_action_reward = np.roll(next_action_reward, -1)
-        time = raw_env['time'].reindex(train_index).diff(1).shift(-1).fillna(1).values
-        next_action_reward[time > 0] = 0
-        reward += self.reward_decay * next_action_reward
-        # reward_abs = abs(reward)
-        # td_error = reward - predict_model_prediction[range(len(train_index)), action]
-        # 保留报酬绝对值较大的操作，70%
-        #valve_arg = reward_abs.argsort()[int(0.3 * len(reward_abs))]
-        #index = reward_abs > reward_abs[valve_arg]
-        # 这里报action过多很可能是人物不对
-        predict_model_prediction[range(len(train_index)), action] = reward
-
-        return [predict_model_prediction, [pre_actions, action.values]]
+    def get_td_error(self, train_env, train_reward):
+        pass
 
     # 在线学习可以batch_size设置成1
     # 另外随机打乱了以后训练几乎无法收敛，即使是batch_size==1的情况
@@ -223,13 +205,40 @@ class KofAgent:
 
         raw_env = self.raw_data_generate(folder, round_nums)
         train_env, train_index = self.train_env_generate(raw_env)
-        train_reward, action = self.train_reward_generate(raw_env, train_env, train_index)
+        train_reward, td_error, action = self.train_reward_generate(raw_env, train_env, train_index)
 
         random_index = np.random.permutation(len(train_index))
         # verbose参数控制输出，这里每个epochs输出一次
         self.predict_model.fit([env[random_index] for env in train_env], train_reward[random_index],
                                batch_size=batch_size,
                                epochs=epochs, verbose=2)
+
+        self.record['total_epochs'] += epochs
+
+    #
+    def train_model_with_sum_tree(self, folder, round_nums=[], batch_size=64, epochs=30):
+        if not round_nums:
+            files = os.listdir('{}/{}'.format(data_dir, folder))
+            data_files = filter(lambda f: '.' in f, files)
+            round_nums = list(set([file.split('.')[0] for file in data_files]))
+
+        raw_env = self.raw_data_generate(folder, round_nums)
+        train_env, train_index = self.train_env_generate(raw_env)
+        train_reward, td_error, action = self.train_reward_generate(raw_env, train_env, train_index)
+        sum_tree = SumTree(td_error)
+        loss_history = []
+        print('train {}/{} {} epochs'.format(folder, round_nums, epochs))
+        for e in range(epochs):
+            loss = 0
+            for i in range(len(train_reward) // batch_size):
+                index = sum_tree.gen_batch_index(batch_size)
+                loss += self.predict_model.train_on_batch([env[index] for env in train_env], train_reward[index])
+            loss_history.append(loss)
+        for i, loss in enumerate(loss_history):
+            if i % 10 == 0:
+                print(loss)
+            else:
+                print(loss, end=',')
 
         self.record['total_epochs'] += epochs
 
@@ -308,13 +317,17 @@ class KofAgent:
 
         return raw_env
 
-    # 测试模型数据是否匹配，
-    # 测试模型输出是否过于单一
+    # 测试模型数据是否匹配,只能训练之前用
+    # 模型更新后就不准了
     def model_test(self, folder, round_nums):
         # 确定即时预测与回放的效果是一致的
         raw_env = self.raw_data_generate(folder, round_nums)
         train_env, train_index = self.train_env_generate(raw_env)
-        _, n_action = self.train_reward_generate(raw_env, train_env, train_index)
+        train_reward, td_error, n_action = self.train_reward_generate(raw_env, train_env, train_index)
+
+        # 这里是训练数据但是也可以拿来参考
+        print('max reward:', train_reward.max())
+        print('min reward:', train_reward.min())
         # 检验后期生成的数据和当时采取的动作是否一样，注意比较的时候e_greedy 要设置成1
         print(np.array(n_action[1]) == np.array(n_action[0]))
         print(np.array(n_action[1]))
@@ -328,17 +341,11 @@ class KofAgent:
         for i in range(1, len(t_env[0]) - self.input_steps - 1):
             t1 = t_env[:, i:i + self.input_steps, :]
             t2 = t_act[:, i - 1:i + self.input_steps - 1]
-            # print(self.raw_env_data_to_input(t1, t2))
             ans = self.predict_model.predict(
                 self.raw_env_data_to_input(t1, t2))
-            # print(ans)
             rst.append(ans.argmax())
-        # print('------')
-        # print(ans[:, ans.argmax()])
-        # print(rst)
 
         # 统计频率
-
         key_freq = {key: 0 for key in set(rst)}
         print(key_freq.keys())
         for key in rst:
@@ -346,10 +353,6 @@ class KofAgent:
         # 各个命令的百分比
         for key in key_freq.keys():
             print('{} {:.2f}%'.format(key, key_freq[key] / len(rst) * 100))
-        # 重置 e_greedy
-        # self.e_greedy = self.action_num / len(key_freq.keys()) * 0.8 + 0.2
-        # print(t_act)
-        # return [rst, t_act]
 
     # 输出测试，发现SeparableConv1D输出为及其稀疏,以及全连接层及其稀疏
     def output_test(self, data):

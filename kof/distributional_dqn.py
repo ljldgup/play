@@ -70,16 +70,16 @@ class DistributionalDQN(KofAgent):
         lstm_status = CuDNNLSTM(512)(concatenate_status)
         # bn层通常加在线性输出(cnn,fc)后面，应为线性输出分布均衡，加在rnn后面效果很差
         # t_status = BatchNormalization()(lstm_status)
-
+        # 加了一层fc效果好了很多，直接加载rnn上训练效果很一般
+        t_status = layers.Dense(512, kernel_initializer='he_uniform')(lstm_status)
+        t_status = BatchNormalization()(t_status)
+        t_status = layers.LeakyReLU(0.05)(t_status)
         probability_distribution_layers = []
         for a in range(self.action_num):
             t_layer = layers.Dense(self.N, kernel_initializer='he_uniform',
-                                   name='action_{}_distribution'.format(a))(lstm_status)
-            t_layer = BatchNormalization()(t_layer)
-            t_layer = layers.LeakyReLU(0.05)(t_layer)
+                                   name='action_{}_distribution'.format(a))(t_status)
             # 注意这里softmax 不用he_uniform初始化
-            t_layer = layers.Dense(self.N, activation='softmax',
-                                   name='action_{}_probability'.format(a))(t_layer)
+            t_layer = layers.Softmax()(t_layer)
             probability_distribution_layers.append(t_layer)
         probability_output = concatenate(probability_distribution_layers, axis=1)
         probability_output = layers.Reshape((self.action_num, self.N))(probability_output)
@@ -89,7 +89,7 @@ class DistributionalDQN(KofAgent):
              role2_baoqi],
             probability_output)
 
-        model.compile(optimizer=Adam(lr=0.0001), loss='categorical_crossentropy')
+        model.compile(optimizer=Adam(lr=0.00002), loss='categorical_crossentropy')
 
         return model
 
@@ -129,10 +129,12 @@ class DistributionalDQN(KofAgent):
         reward_value[reward_value > self.vmax] = self.vmax
         reward_value[reward_value < self.vmin] = self.vmin
         new_distribution = self.gen_new_reward_distribution(reward_value, next_reward_distribution)
-
+        td_error = (new_distribution - predict_model_prediction[range(len(train_index)), action]) * \
+                   self.rewards_distribution[0, 0]
+        td_error = td_error.sum(axis=1)
         predict_model_prediction[range(len(train_index)), action] = new_distribution
 
-        return [predict_model_prediction, [pre_actions, action.values]]
+        return [predict_model_prediction, td_error, [pre_actions, action.values]]
 
     # 将分布移到采样点上
     def gen_new_reward_distribution(self, reward_value, old_reward_distribution):
@@ -184,19 +186,18 @@ class DistributionalDQN(KofAgent):
 if __name__ == '__main__':
     model = DistributionalDQN('iori')
 
-    for i in [0]:
+    for i in range(11, 14):
         try:
             print('train ', i)
-            for num in range(10):
-                for e in range(2):
-                    model.train_model(i, [1], epochs=40)
-                    model.weight_copy()
+            for num in range(1, 10):
+                model.train_model_with_sum_tree(i, [num], epochs=30)
+                model.weight_copy()
         except:
             # print('no data in ', i)
             traceback.print_exc()
-    model.save_model()
+        model.save_model()
     '''
-    raw_env = model.raw_data_generate(0, [1])
+    raw_env = model.raw_data_generate(1, [1])
     train_env, train_index = model.train_env_generate(raw_env)
     train_distribution, n_action = model.distributional_dqn_train_data(raw_env, train_env, train_index)
     t = model.predict_model.predict([np.expand_dims(env[100], 0) for env in train_env])
