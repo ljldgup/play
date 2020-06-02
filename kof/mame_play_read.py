@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 
 from kof.distributional_dqn import DistributionalDQN
-from kof.dqn_models import model_1, model_2, DuelingDQN
+from kof.dqn_models import DoubleDQN, DuelingDQN, DuelingDQN_2
 from kof.kof_command_mame import operation, restart, simulate
 
 '''
@@ -139,14 +139,15 @@ def train_on_mame(model, train=True, round_num=12):
 
 if __name__ == '__main__':
     dqn_model = DistributionalDQN('iori')
+    # dqn_model = DoubleDQN('iori')
+    # dqn_model = DuelingDQN_2('iori')
     # dqn_model = DuelingDQN('iori')
-    # dqn_model = model_2('iori')
-    # dqn_model = model_1('iori')
-    # dqn_model = random_model('iori')
+    # dqn_model = random_mojdel('iori')
     # model.load_model('1233')
     # model = random_model('kyo')
     folder_num = train_on_mame(dqn_model, True)
-    dqn_model.train_model(folder_num, epochs=30)
+    dqn_model.train_model(folder_num, epochs=20)
     dqn_model.save_model()
 
     dqn_model.operation_analysis(folder_num)
+    dqn_model.model_test(dqn_model, [11])

@@ -234,12 +234,8 @@ class KofAgent:
                 index = sum_tree.gen_batch_index(batch_size)
                 loss += self.predict_model.train_on_batch([env[index] for env in train_env], train_reward[index])
             loss_history.append(loss)
-        for i, loss in enumerate(loss_history):
-            if i % 10 == 0:
-                print(loss)
-            else:
-                print(loss, end=',')
-
+        for loss in loss_history:
+            print(loss)
         self.record['total_epochs'] += epochs
 
     def weight_copy(self):
