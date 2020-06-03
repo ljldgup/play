@@ -33,7 +33,7 @@ data_dir = os.getcwd()
 # 位置距离卷积 + lstm + fc
 class DoubleDQN(KofAgent):
 
-    def __init__(self, role, model_name='double_dqn', reward_decay=0.96):
+    def __init__(self, role, model_name='double_dqn', reward_decay=0.98):
         super().__init__(role=role, model_name=model_name, reward_decay=reward_decay)
         self.train_reward_generate = self.double_dqn_train_data
 
@@ -100,22 +100,32 @@ class DoubleDQN(KofAgent):
 
         # 由训练模型选动作，target模型根据动作估算q值，不关心是否最大
         # yj=Rj + γQ′(ϕ(S′j), argmaxa′Q(ϕ(S′j), a, w), w′)
+        time = raw_env['time'].reindex(train_index).diff(1).shift(-1).fillna(1).values
+
         next_max_reward_action = predict_model_prediction.argmax(axis=1)
         next_action_reward = target_model_prediction[range(len(train_index)), next_max_reward_action.astype('int')]
-
+        '''
         next_action_reward = np.roll(next_action_reward, -1)
-        time = raw_env['time'].reindex(train_index).diff(1).shift(-1).fillna(1).values
         next_action_reward[time > 0] = 0
         reward += self.reward_decay * next_action_reward
-        td_error = reward - predict_model_prediction[range(len(train_index)), action]
+        '''
+        # Multi-Step Learning 一次性加上后面n步的衰减报酬
+        multi_steps = 1
+        for t in range(multi_steps):
+            next_action_reward = np.roll(next_action_reward, -1)
+            # 始终把最后一步设为0，由于移动的原因，0会被前移，所以不需要考虑之前的时间步
+            next_action_reward[time > 0] = 0
+            reward += self.reward_decay ** (t + 1) * next_action_reward
+        # 上下限裁剪，防止过估计
+        reward[reward > 1] = 1
+        reward[reward < -1] = -1
+        # 注意一定要取绝对值，不然很发生很严重的过估计
+        td_error = abs(reward - predict_model_prediction[range(len(train_index)), action])
         td_error = td_error.values
         # 这里报action过多很可能是人物不对
         predict_model_prediction[range(len(train_index)), action] = reward
 
         return [predict_model_prediction, td_error, [pre_actions, action.values]]
-
-    def get_td_error(self):
-        pass
 
     def raw_env_data_to_input(self, raw_data, action):
         # 这里energy改成一个只输入最后一个,这里输出的形状应该就是1，貌似在keras中也能正常运作
@@ -131,8 +141,8 @@ class DoubleDQN(KofAgent):
 # 将衰减降低至0.94，去掉了上次动作输入，将1p embedding带宽扩展到8，后效果比之前好了很多
 # 但动作比较集中
 class DuelingDQN(DoubleDQN):
-    def __init__(self, role, reward_decay=0.96):
-        super().__init__(role=role, model_name='dueling_dqn', reward_decay=reward_decay)
+    def __init__(self, role):
+        super().__init__(role=role, model_name='dueling_dqn')
 
     def build_model(self):
         role1_actions = Input(shape=(self.input_steps,), name='role1_actions')
@@ -188,8 +198,8 @@ class DuelingDQN(DoubleDQN):
 # 两个角色分开做lstm
 class DuelingDQN_2(DoubleDQN):
 
-    def __init__(self, role, reward_decay=0.98):
-        super().__init__(role=role, model_name='dueling_dqn_2', reward_decay=reward_decay)
+    def __init__(self, role):
+        super().__init__(role=role, model_name='dueling_dqn_2')
 
     def build_model(self):
         role1_actions = Input(shape=(self.input_steps,), name='role1_actions')
@@ -247,24 +257,34 @@ class DuelingDQN_2(DoubleDQN):
 
 
 if __name__ == '__main__':
-    model = DuelingDQN('iori')
+    models = [DuelingDQN('iori'), DoubleDQN('iori'), DuelingDQN_2('iori')]
     # model = DuelingDQN('iori')
 
     # model.model_test(1, [1,2])
     # model.model_test(2, [1,2])
     # model.predict_model.summary()
     # t = model.operation_analysis(5)
-    #
 
-    for i in [12, 13]:
-        try:
-            print('train ', i)
-            for r in range(1, 10):
-                model.train_model_with_sum_tree(i, [r])
-                model.weight_copy()
-        except:
-            traceback.print_exc()
+    for model in models:
+        print('-----------------------------')
+        print('train ', model.model_name)
+        for i in range(1, 14):
+            try:
+                print('train ', i)
+                for r in range(1, 4):
+                    # model.train_model(i, [r])
+                    model.train_model_with_sum_tree(i, [r])
+                    model.weight_copy()
+            except:
+                traceback.print_exc()
         model.save_model()
+
+    for model in models:
+        print('-----------------------------')
+        print('test ', model.model_name)
+        model.model_test(12, [1])
+    '''
+    '''
     '''
     raw_env = model.raw_data_generate(2, [1])
     train_env, train_index = model.train_env_generate(raw_env)
