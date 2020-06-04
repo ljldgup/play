@@ -3,8 +3,7 @@ import random
 import traceback
 import numpy as np
 from tensorflow.keras import backend as K
-
-from kof.kof_command_mame import role_commands, global_set
+from matplotlib import pyplot as plt
 from kof.kof_agent import KofAgent
 from tensorflow.keras import layers
 from tensorflow.python.keras import Input, Model
@@ -21,7 +20,7 @@ reward比例:不能太小，不然难以收敛
 学习率 过大的话学习效果很不好，小一点容易找到稳定的策略
 
 改进点：
-Prioritised replay
+残差网络
 transformer
 '''
 
@@ -35,6 +34,9 @@ class DoubleDQN(KofAgent):
 
     def __init__(self, role, model_name='double_dqn', reward_decay=0.98):
         super().__init__(role=role, model_name=model_name, reward_decay=reward_decay)
+        # 把target_model移到value based文件中,因为policy based不需要
+        self.target_model = self.build_model()
+        self.weight_copy()
         self.train_reward_generate = self.double_dqn_train_data
 
     def build_model(self):
@@ -76,7 +78,7 @@ class DoubleDQN(KofAgent):
             t_layer = layers.Dense(128, kernel_initializer='he_uniform')(t_status)
             t_layer = BatchNormalization()(t_layer)
             t_layer = layers.LeakyReLU(0.05)(t_layer)
-            # 注意这里softmax 不用he_uniform初始化
+            # 注意这里softmax
             t_layer = layers.Dense(1, name='action_{}'.format(a))(t_layer)
             output_layers.append(t_layer)
 
@@ -84,9 +86,34 @@ class DoubleDQN(KofAgent):
         model = Model([role1_actions, role2_actions, role1_energy, role2_energy, role1_x_y, role2_x_y,
                        role2_baoqi], output)
 
-        model.compile(optimizer=Adam(lr=0.00003), loss='mse')
+        model.compile(optimizer=Adam(lr=0.00001), loss='mse')
 
         return model
+
+    # nature dqn 训练数据生成
+    def nature_dqn_reward_generate(self, raw_env, train_env, train_index):
+        reward = raw_env['reward'].reindex(train_index)
+        action = raw_env['action'].reindex(train_index)
+        action = action.astype('int')
+
+        target_model_prediction = self.target_model.predict(train_env)
+        predict_model_prediction = self.predict_model.predict(train_env)
+        # pre_prediction = predict_model_prediction.copy()
+        pre_actions = predict_model_prediction.argmax(axis=1)
+
+        # yj=Rj+γmaxa′Q′(ϕ(S′j),A′j,w′)
+        # 下一步的最大报酬
+        next_action_reward = target_model_prediction.max(axis=1)
+        next_action_reward = np.roll(next_action_reward, -1)
+
+        # 比上次时间大，说明重来了，上次就是end，fillna用于填充结尾，结尾也是end
+        time = raw_env['time'].reindex(train_index).diff(1).shift(-1).fillna(1).values
+        # 最后一此操作，下一次的报酬为0
+        next_action_reward[time > 0] = 0
+        reward += next_action_reward * self.reward_decay
+        td_error = reward - predict_model_prediction[range(len(train_index)), action]
+        predict_model_prediction[range(len(train_index)), action.values] = reward
+        return [predict_model_prediction, td_error, [pre_actions, action]]
 
     def double_dqn_train_data(self, raw_env, train_env, train_index):
         reward = raw_env['reward'].reindex(train_index)
@@ -109,22 +136,25 @@ class DoubleDQN(KofAgent):
         next_action_reward[time > 0] = 0
         reward += self.reward_decay * next_action_reward
         '''
-        # Multi-Step Learning 一次性加上后面n步的衰减报酬
+        # multi-Step Learning 一次性加上后面n步的衰减报酬
+        # 同样的训练量下，multi_steps大的，网络会预测值绝对值迅速变大，
+        # 考虑multi_steps = 1的情况加大训练量，值是否也与加大multi_steps的情况一样
         multi_steps = 1
         for t in range(multi_steps):
             next_action_reward = np.roll(next_action_reward, -1)
             # 始终把最后一步设为0，由于移动的原因，0会被前移，所以不需要考虑之前的时间步
             next_action_reward[time > 0] = 0
             reward += self.reward_decay ** (t + 1) * next_action_reward
-        # 上下限裁剪，防止过估计
-        reward[reward > 1] = 1
-        reward[reward < -1] = -1
+
         # 注意一定要取绝对值，不然很发生很严重的过估计
         td_error = abs(reward - predict_model_prediction[range(len(train_index)), action])
         td_error = td_error.values
         # 这里报action过多很可能是人物不对
         predict_model_prediction[range(len(train_index)), action] = reward
 
+        # 上下限裁剪，防止过估计
+        # predict_model_prediction[predict_model_prediction > 1] = 1
+        # predict_model_prediction[predict_model_prediction < -1] = -1
         return [predict_model_prediction, td_error, [pre_actions, action.values]]
 
     def raw_env_data_to_input(self, raw_data, action):
@@ -136,13 +166,37 @@ class DoubleDQN(KofAgent):
     def empty_env(self):
         return [[], [], [], [], [], [], []]
 
+    def weight_copy(self):
+        self.target_model.set_weights(self.predict_model.get_weights())
+
+    def value_test(self, folder, round_nums):
+        # q值分布可视化
+        raw_env = self.raw_data_generate(folder, round_nums)
+        train_env, train_index = self.train_env_generate(raw_env)
+        train_reward, td_error, n_action = self.train_reward_generate(raw_env, train_env, train_index)
+
+        # 这里是训练数据但是也可以拿来参考,查看是否过估计，目前所有的模型几乎都会过估计
+        print('max reward:', train_reward.max())
+        print('min reward:', train_reward.min())
+        '''
+        # 这里所有的图在一个图上，plt.figure()
+        # 这里不压平flatten会按照第一个维度动作数来统计
+        plt.hist(train_reward.flatten(), bins=30, label=self.model_name)
+        # 加了这句才显示lable
+        plt.legend()
+        '''
+
+        fig1 = plt.figure()
+        ax1 = fig1.add_subplot(111)
+        ax1.hist(train_reward.flatten(), bins=30, label=self.model_name)
+        fig1.legend()
 
 # 正常dueling dqn
 # 将衰减降低至0.94，去掉了上次动作输入，将1p embedding带宽扩展到8，后效果比之前好了很多
 # 但动作比较集中
 class DuelingDQN(DoubleDQN):
-    def __init__(self, role):
-        super().__init__(role=role, model_name='dueling_dqn')
+    def __init__(self, role, model_name='dueling_dqn'):
+        super().__init__(role=role, model_name=model_name)
 
     def build_model(self):
         role1_actions = Input(shape=(self.input_steps,), name='role1_actions')
@@ -190,7 +244,7 @@ class DuelingDQN(DoubleDQN):
         model = Model([role1_actions, role2_actions, role1_energy, role2_energy, role1_x_y, role2_x_y,
                        role2_baoqi], q)
 
-        model.compile(optimizer=Adam(lr=0.00003), loss='mse')
+        model.compile(optimizer=Adam(lr=0.00001), loss='mse')
 
         return model
 
@@ -198,8 +252,8 @@ class DuelingDQN(DoubleDQN):
 # 两个角色分开做lstm
 class DuelingDQN_2(DoubleDQN):
 
-    def __init__(self, role):
-        super().__init__(role=role, model_name='dueling_dqn_2')
+    def __init__(self, role, model_name='dueling_dqn_2'):
+        super().__init__(role=role, model_name=model_name)
 
     def build_model(self):
         role1_actions = Input(shape=(self.input_steps,), name='role1_actions')
@@ -251,7 +305,7 @@ class DuelingDQN_2(DoubleDQN):
              role2_baoqi],
             q)
 
-        model.compile(optimizer=Adam(lr=0.00003), loss='mse')
+        model.compile(optimizer=Adam(lr=0.00001), loss='mse')
 
         return model
 
@@ -264,14 +318,14 @@ if __name__ == '__main__':
     # model.model_test(2, [1,2])
     # model.predict_model.summary()
     # t = model.operation_analysis(5)
-
+    '''
     for model in models:
         print('-----------------------------')
         print('train ', model.model_name)
-        for i in range(1, 14):
+        for i in range(1, 2):
             try:
                 print('train ', i)
-                for r in range(1, 4):
+                for r in range(1, 2):
                     # model.train_model(i, [r])
                     model.train_model_with_sum_tree(i, [r])
                     model.weight_copy()
@@ -279,16 +333,17 @@ if __name__ == '__main__':
                 traceback.print_exc()
         model.save_model()
 
+    '''
     for model in models:
         print('-----------------------------')
         print('test ', model.model_name)
-        model.model_test(12, [1])
+        model.model_test(1, [1])
+        model.value_test(1, [1])
+
     '''
-    '''
-    '''
-    raw_env = model.raw_data_generate(2, [1])
+    raw_env = model.raw_data_generate(1, [1])
     train_env, train_index = model.train_env_generate(raw_env)
-    train_reward, n_action = model.double_dqn_train_data(raw_env, train_env, train_index)
+    train_reward, td_error, n_action = model.double_dqn_train_data(raw_env, train_env, train_index)
     t = model.predict_model.predict([np.expand_dims(env[100], 0) for env in train_env])
     # output = model.output_test([ev[50].reshape(1, *ev[50].shape) for ev in train_env])
 

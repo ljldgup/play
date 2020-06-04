@@ -10,19 +10,21 @@ from tensorflow.python.keras import Input, Model
 from tensorflow.python.keras.layers import concatenate, BatchNormalization, CuDNNLSTM
 from tensorflow.python.keras.optimizers import Adam
 
+from kof.value_based_models import DoubleDQN
+
 data_dir = os.getcwd()
 
 
-class DistributionalDQN(KofAgent):
+class DistributionalDQN(DoubleDQN):
 
-    def __init__(self, role, reward_decay=0.96):
-
-        self.N = 21
+    def __init__(self, role, reward_decay=0.98):
+        # 这里的N必须是能得到有限小数分割区间大小的值，不然后面概率重置会出错
+        self.N = 81
         super().__init__(role=role, model_name='distributional', reward_decay=reward_decay)
 
         # reward分布的值，用来乘以网络输出，得到reward期望
-        self.vmax = 1
-        self.vmin = -1
+        self.vmax = 4
+        self.vmin = -4
         self.rewards_values = np.linspace(self.vmin, self.vmax, self.N)
         self.rewards_distribution = np.array([[self.rewards_values] * self.action_num])
         self.train_reward_generate = self.distributional_dqn_train_data
@@ -89,7 +91,7 @@ class DistributionalDQN(KofAgent):
              role2_baoqi],
             probability_output)
 
-        model.compile(optimizer=Adam(lr=0.00002), loss='categorical_crossentropy')
+        model.compile(optimizer=Adam(lr=0.00003), loss='categorical_crossentropy')
 
         return model
 
@@ -112,10 +114,9 @@ class DistributionalDQN(KofAgent):
         pre_actions = (predict_model_prediction * self.rewards_distribution).sum(axis=2).argmax(axis=1)
 
         next_max_reward_action = (predict_model_prediction * self.rewards_distribution).sum(axis=2).argmax(axis=1)
-        next_reward_distribution = target_model_prediction[
+        current_reward_distribution = target_model_prediction[
             range(len(train_index)), next_max_reward_action.astype('int')]
-        current_reward_distribution = next_reward_distribution
-        next_reward_distribution = np.roll(next_reward_distribution, -1)
+        next_reward_distribution = np.roll(current_reward_distribution, -1)
 
         # 这里shift(-1)把开始移动到之前最后一次
         time = raw_env['time'].reindex(train_index).diff(1).shift(-1).fillna(1).values
@@ -123,6 +124,7 @@ class DistributionalDQN(KofAgent):
         next_reward_distribution[time > 0] = current_reward_distribution[time > 0]
 
         t_reward = np.array([self.rewards_values] * len(train_index))
+        t_reward[time > 0] = 0
         reward_value = np.expand_dims(reward.values, 1) + self.reward_decay * t_reward
 
         # 裁剪
@@ -131,7 +133,7 @@ class DistributionalDQN(KofAgent):
         new_distribution = self.gen_new_reward_distribution(reward_value, next_reward_distribution)
         td_error = (new_distribution - predict_model_prediction[range(len(train_index)), action]) * \
                    self.rewards_distribution[0, 0]
-        td_error = td_error.sum(axis=1)
+        td_error = abs(td_error.sum(axis=1))
         predict_model_prediction[range(len(train_index)), action] = new_distribution
 
         return [predict_model_prediction, td_error, [pre_actions, action.values]]
@@ -186,16 +188,16 @@ class DistributionalDQN(KofAgent):
 if __name__ == '__main__':
     model = DistributionalDQN('iori')
 
-    for i in range(11, 14):
+    for i in range(1, 2):
         try:
             print('train ', i)
-            for num in range(1, 10):
-                model.train_model_with_sum_tree(i, [num], epochs=30)
+            for num in range(1, 2):
+                model.train_model_with_sum_tree(i, [num], epochs=80)
                 model.weight_copy()
         except:
             # print('no data in ', i)
             traceback.print_exc()
-        model.save_model()
+    model.save_model()
     '''
     raw_env = model.raw_data_generate(1, [1])
     train_env, train_index = model.train_env_generate(raw_env)

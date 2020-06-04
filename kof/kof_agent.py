@@ -5,9 +5,9 @@ import time
 
 import pandas as pd
 import numpy as np
+
 from tensorflow.python.keras import Model
 
-from kof import sumtree
 from kof.kof_command_mame import global_set, role_commands
 from kof.sumtree import SumTree
 
@@ -49,8 +49,6 @@ class KofAgent:
 
         global_set(role)
         self.action_num = len(role_commands[role])
-
-        self.target_model = self.build_model()
         self.predict_model = self.build_model()
         self.record = self.get_record()
         if os.path.exists('{}/model/{}_{}.index'.format(data_dir, self.role, self.model_name)):
@@ -58,8 +56,6 @@ class KofAgent:
             self.load_model()
         else:
             self.save_model()
-
-        self.train_reward_generate = self.nature_dqn_reward_generate
 
     def choose_action(self, raw_data, action, random_choose=False):
         if random_choose or random.random() > self.e_greedy:
@@ -92,25 +88,24 @@ class KofAgent:
             life_reward = raw_env['role1_life'].diff(1).fillna(0) - raw_env['role2_life'].diff(1).fillna(0)
 
             # 避免浪费大招
-            energy_reward = raw_env['role1_energy'].diff(1).fillna(0)
-            energy_reward = energy_reward.map(lambda x: 0 if x > 0 else x)
+            # energy_reward = raw_env['role1_energy'].diff(1).fillna(0)
+            # energy_reward = energy_reward.map(lambda x: 0 if x > 0 else x)
 
             # 防守的收益
             # guard_reward = -raw_env['guard_value'].diff(1).fillna(0)
             # guard_reward = guard_reward.map(lambda x: x if x > 0 else 0)
 
             # 连招收益
-            combo_reward = raw_env['role1_combo_count'].diff(1).fillna(0)
+            # combo_reward = raw_env['role1_combo_count'].diff(1).fillna(0)
             # 由guard，energy_reward，另外几个基本不会并存
-            reward = life_reward + combo_reward
 
             # 生成time_steps时间步内的reward
             # 改成dqn 因为自动加后面一次报酬，后应该不需要rolling
             # reward_sum = reward.rolling(self.reward_steps, min_periods=1).sum().shift(-self.reward_steps).fillna(0)
 
-            # reward_sum太小无法收敛，太大则整体不稳定
-            raw_env['raw_reward'] = reward + energy_reward
-            raw_env['reward'] = reward / 80
+            # 值要在[-1，1]左右,reward_sum太小反而容易过估计
+            raw_env['raw_reward'] = life_reward
+            raw_env['reward'] = life_reward / 10
 
             # 使用log(n+x)-log(n)缩放reward，防止少量特别大的动作影响收敛，目前来看适当的缩放，收敛效果好。
             # raw_env['reward'] = reward.map(
@@ -162,39 +157,7 @@ class KofAgent:
     def train_reward_generate(self, raw_env, train_env, train_index):
         return [None, [None, None]]
 
-    # nature dqn 训练数据生成
-    def nature_dqn_reward_generate(self, raw_env, train_env, train_index):
-        reward = raw_env['reward'].reindex(train_index)
-        action = raw_env['action'].reindex(train_index)
-        action = action.astype('int')
-
-        target_model_prediction = self.target_model.predict(train_env)
-        predict_model_prediction = self.predict_model.predict(train_env)
-        # pre_prediction = predict_model_prediction.copy()
-        pre_actions = predict_model_prediction.argmax(axis=1)
-
-        # yj=Rj+γmaxa′Q′(ϕ(S′j),A′j,w′)
-        # 下一步的最大报酬
-        next_action_reward = target_model_prediction.max(axis=1)
-        next_action_reward = np.roll(next_action_reward, -1)
-
-        # 比上次时间大，说明重来了，上次就是end，fillna用于填充结尾，结尾也是end
-        time = raw_env['time'].reindex(train_index).diff(1).shift(-1).fillna(1).values
-        # 最后一此操作，下一次的报酬为0
-        next_action_reward[time > 0] = 0
-        reward += next_action_reward * self.reward_decay
-
-        td_error = reward - predict_model_prediction[range(len(train_index)), action]
-
-        predict_model_prediction[range(len(train_index)), action.values] = reward
-
-        return [predict_model_prediction, td_error, [pre_actions, action]]
-
-    def get_td_error(self, train_env, train_reward):
-        pass
-
-    # 在线学习可以batch_size设置成1
-    # 另外随机打乱了以后训练几乎无法收敛，即使是batch_size==1的情况
+    # 在线学习可以batch_size设置成
     # 改成所有数据何在一起，打乱顺序，使用batch 训练，速度快了很多
     # batch_size的选取不同，损失表现完全不一样
     def train_model(self, folder, round_nums=[], batch_size=32, epochs=30):
@@ -215,7 +178,7 @@ class KofAgent:
 
         self.record['total_epochs'] += epochs
 
-    #
+    # Prioritized Replay DQN 使用sumtree 生成 batch
     def train_model_with_sum_tree(self, folder, round_nums=[], batch_size=64, epochs=30):
         if not round_nums:
             files = os.listdir('{}/{}'.format(data_dir, folder))
@@ -238,38 +201,28 @@ class KofAgent:
             print(loss)
         self.record['total_epochs'] += epochs
 
-    def weight_copy(self):
-        self.target_model.set_weights(self.predict_model.get_weights())
-
-    def save_model(self, name=None):
+    def save_model(self, ):
         if not os.path.exists('{}/model'.format(data_dir)):
             os.mkdir('{}/model'.format(data_dir))
-        self.weight_copy()
-        if name:
-            # 用于临时保存表现最好的模型
-            self.target_model.save_weights('{}/model/{}_{}_{}'.format(data_dir, self.role, self.model_name, name))
-        else:
-            self.target_model.save_weights('{}/model/{}_{}'.format(data_dir, self.role, self.model_name))
+        self.predict_model.save_weights('{}/model/{}_{}'.format(data_dir, self.role, self.model_name))
 
         with open('{}/model/{}_{}_record'.format(data_dir, self.role, self.model_name), 'w') as r:
             r.write(str(self.record))
 
-    def load_model(self, name=None):
-        if name:
-            self.predict_model.load_weights('{}/model/{}_{}_{}'.format(data_dir, self.role, self.model_name, name))
-        else:
-            self.predict_model.load_weights('{}/model/{}_{}'.format(data_dir, self.role, self.model_name))
-        self.weight_copy()
+    def load_model(self):
+        self.predict_model.load_weights('{}/model/{}_{}'.format(data_dir, self.role, self.model_name))
 
     def build_model(self):
         pass
 
-    # 游戏运行时把原始环境输入，分割成模型能接受的输入，在具体的模型中实现
+    # 游戏运行时把原始环境输入，分割成模型能接受的输入，在具体的模型可以修改
     def raw_env_data_to_input(self, raw_data, action):
-        pass
+        return [raw_data[:, :, 0], raw_data[:, :, 1], raw_data[:, :, 2], raw_data[:, :, 3],
+                raw_data[:, :, 4:6], raw_data[:, :, 6:8], raw_data[:, :, 8]]
 
+    # 这里返回的list要和raw_env_data_to_input返回的大小一样
     def empty_env(self):
-        pass
+        return [[], [], [], [], [], [], []]
 
     def get_record(self):
         if os.path.exists('{}/model/{}_{}_record'.format(data_dir, self.role, self.model_name)):
@@ -321,34 +274,9 @@ class KofAgent:
         train_env, train_index = self.train_env_generate(raw_env)
         train_reward, td_error, n_action = self.train_reward_generate(raw_env, train_env, train_index)
 
-        # 这里是训练数据但是也可以拿来参考
-        print('max reward:', train_reward.max())
-        print('min reward:', train_reward.min())
-        # 检验后期生成的数据和当时采取的动作是否一样，注意比较的时候e_greedy 要设置成1
+        # 检验后期生成的数据和当时采取的动作是否一样，注意比较的时候e_greedy 要设置成1,模型要没被训练过
         print(np.array(n_action[1]) == np.array(n_action[0]))
-        print(np.array(n_action[1]))
-
-        t_env = raw_env.values
-        t_act = raw_env['action'].values
-        t_env = np.expand_dims(t_env, 0)
-        t_act = np.expand_dims(t_act, 0)
-
-        rst = []
-        for i in range(1, len(t_env[0]) - self.input_steps - 1):
-            t1 = t_env[:, i:i + self.input_steps, :]
-            t2 = t_act[:, i - 1:i + self.input_steps - 1]
-            ans = self.predict_model.predict(
-                self.raw_env_data_to_input(t1, t2))
-            rst.append(ans.argmax())
-
-        # 统计频率
-        key_freq = {key: 0 for key in set(rst)}
-        print(key_freq.keys())
-        for key in rst:
-            key_freq[key] += 1
-        # 各个命令的百分比
-        for key in key_freq.keys():
-            print('{} {:.2f}%'.format(key, key_freq[key] / len(rst) * 100))
+        # print(np.array(n_action[1]))
 
     # 输出测试，发现SeparableConv1D输出为及其稀疏,以及全连接层及其稀疏
     def output_test(self, data):
