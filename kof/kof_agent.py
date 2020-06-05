@@ -86,18 +86,12 @@ class KofAgent:
             # 筛选时间在流动的列
             raw_env = raw_env[raw_env['time'].diff(1).fillna(0) != 0]
             life_reward = raw_env['role1_life'].diff(1).fillna(0) - raw_env['role2_life'].diff(1).fillna(0)
-
-            # 避免浪费大招
-            # energy_reward = raw_env['role1_energy'].diff(1).fillna(0)
-            # energy_reward = energy_reward.map(lambda x: 0 if x > 0 else x)
+            # 这里避免新的一局开始，血量回满被误认为报酬
+            life_reward[raw_env['time'].diff(1) > 0] = 0
 
             # 防守的收益
             # guard_reward = -raw_env['guard_value'].diff(1).fillna(0)
             # guard_reward = guard_reward.map(lambda x: x if x > 0 else 0)
-
-            # 连招收益
-            # combo_reward = raw_env['role1_combo_count'].diff(1).fillna(0)
-            # 由guard，energy_reward，另外几个基本不会并存
 
             # 生成time_steps时间步内的reward
             # 改成dqn 因为自动加后面一次报酬，后应该不需要rolling
@@ -105,7 +99,19 @@ class KofAgent:
 
             # 值要在[-1，1]左右,reward_sum太小反而容易过估计
             raw_env['raw_reward'] = life_reward
-            raw_env['reward'] = life_reward / 10
+            raw_env['reward'] = life_reward / 20
+
+            # 当前步的reward实际上是上一步的，我一直没有上移，这是个巨大的错误
+            raw_env['reward'] = raw_env['reward'].shift(-1).fillna(0)
+
+            # 根据胜负增加额外的报酬,pandas不允许切片或者搜索赋值，只能先这样
+            end_index = (raw_env[raw_env['time'].diff(1).shift(-1).fillna(1) > 0]).index
+            for idx in end_index:
+                # 这里暂时不明白为什么是loc,我是按索引取得，按理应该是iloc
+                if raw_env.loc[idx]['role1_life'] > raw_env.loc[idx]['role2_life']:
+                    raw_env.loc[idx]['reward'] = 1
+                else:
+                    raw_env.loc[idx]['reward'] = -1
 
             # 使用log(n+x)-log(n)缩放reward，防止少量特别大的动作影响收敛，目前来看适当的缩放，收敛效果好。
             # raw_env['reward'] = reward.map(
