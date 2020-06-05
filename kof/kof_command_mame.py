@@ -39,6 +39,8 @@ role_commands['kyo'] = [
     ([2, 3, 6], [0, 0, 1]),
     ([6, 2, 3], [0, 0, 1]),
     ([4, 2, 1], [0, 0, 2]),
+    # 晴月阳，出招只有从下开始的才需要注意1,3，这边绕半圈的不需要过3
+    ([6, 2, 1, 4], [0, 0, 4]),
     ([2, 3, 6, 2, 3, 6], [0, 0, 0, 0, 0, 1]),
 ]
 
@@ -51,13 +53,13 @@ role_commands['iori'] = [
     # ab,cd
     ([5], [5]),
     ([5], [6]),
-    ([6], [0]),
+    ([5], [0]),
     ([5], [3]),
     ([5], [4]),
-    ([9, 0], [0, 0]),
+    ([2, 1, 4], [0, 0, 3]),
     ([6, 6], [1, 1]),
-    ([2, 3], [0, 1]),
-    ([2, 3], [0, 2]),
+    ([2, 4], [0, 1]),
+    ([2, 4], [0, 4]),
     ([2, 1, 4], [0, 0, 1]),
     ([2, 3, 6], [0, 0, 3]),
     ([6, 2, 3], [0, 0, 1]),
@@ -92,21 +94,21 @@ def global_set(chosed_role):
     role = chosed_role
 
 
-def direction_operation(direction_keys, pos_reverse=False):
+def direction_operation(direction_key, pos_reverse=False):
     global remain_direction, opposite_direction
     # 反向映射
     if pos_reverse:
-        direction_keys = opposite_direction[direction_keys]
+        direction_key = opposite_direction[direction_key]
 
     # 按下新的键位，松开不用的键位，模拟摇杆, 注意这里要后送
-    for key in direct_key_list[direction_keys]:
+    for key in direct_key_list[direction_key]:
         if key not in remain_direction:
             win32api.keybd_event(keys_map[key], virtual_key_map[key], 0, 0)
     time.sleep(0.01)
     for key in remain_direction:
-        if key not in direct_key_list[direction_keys]:
+        if key not in direct_key_list[direction_key]:
             win32api.keybd_event(keys_map[key], virtual_key_map[key], win32con.KEYEVENTF_KEYUP, 0)
-    remain_direction = direct_key_list[direction_keys]
+    remain_direction = direct_key_list[direction_key]
 
 
 def action_operation(action_key):
@@ -217,5 +219,6 @@ def test():
 
 if __name__ == '__main__':
     time.sleep(5)
-    global_set('kyo')
-    test()
+    #global_set('kyo')
+    #test()
+    operation()

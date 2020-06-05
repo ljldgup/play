@@ -3,11 +3,11 @@ import random
 import traceback
 
 import numpy as np
-
-from kof.kof_agent import KofAgent
+from tensorflow.keras import backend as K
 from tensorflow.keras import layers
 from tensorflow.python.keras import Input, Model
 from tensorflow.python.keras.layers import concatenate, BatchNormalization, CuDNNLSTM
+from tensorflow.python.keras.losses import categorical_crossentropy
 from tensorflow.python.keras.optimizers import Adam
 
 from kof.value_based_models import DoubleDQN
@@ -15,11 +15,13 @@ from kof.value_based_models import DoubleDQN
 data_dir = os.getcwd()
 
 
-class DistributionalDQN(DoubleDQN):
+# 注意应为输出是sample*action*N,貌似keras自己交叉熵损失函数计算有问题
+# 所以自己定义一个，压平以后再算交叉熵
 
-    def __init__(self, role, reward_decay=0.98):
+class DistributionalDQN(DoubleDQN):
+    def __init__(self, role, reward_decay=0.96):
         # 这里的N必须是能得到有限小数分割区间大小的值，不然后面概率重置会出错
-        self.N = 81
+        self.N = 21
         super().__init__(role=role, model_name='distributional', reward_decay=reward_decay)
 
         # reward分布的值，用来乘以网络输出，得到reward期望
@@ -91,7 +93,8 @@ class DistributionalDQN(DoubleDQN):
              role2_baoqi],
             probability_output)
 
-        model.compile(optimizer=Adam(lr=0.00003), loss='categorical_crossentropy')
+        model.compile(optimizer=Adam(), loss='categorical_crossentropy')
+        # model.compile(optimizer=Adam(lr=0.00001), loss='mse')
 
         return model
 
@@ -131,9 +134,11 @@ class DistributionalDQN(DoubleDQN):
         reward_value[reward_value > self.vmax] = self.vmax
         reward_value[reward_value < self.vmin] = self.vmin
         new_distribution = self.gen_new_reward_distribution(reward_value, next_reward_distribution)
-        td_error = (new_distribution - predict_model_prediction[range(len(train_index)), action]) * \
-                   self.rewards_distribution[0, 0]
+        new_distribution[time > 0] = current_reward_distribution[time > 0]
+        # 改用交叉熵
+        td_error = new_distribution * np.log(predict_model_prediction[range(len(train_index)), action])
         td_error = abs(td_error.sum(axis=1))
+
         predict_model_prediction[range(len(train_index)), action] = new_distribution
 
         return [predict_model_prediction, td_error, [pre_actions, action.values]]
@@ -141,8 +146,9 @@ class DistributionalDQN(DoubleDQN):
     # 将分布移到采样点上
     def gen_new_reward_distribution(self, reward_value, old_reward_distribution):
         length = len(reward_value)
-        reward_int = (reward_value / 0.1).astype('int')
-        reward_distance = 1 - 10 * abs(reward_value - reward_int * 0.1)
+        interval = (self.vmax - self.vmin) / (self.N - 1)
+        reward_int = (reward_value / interval).astype('int')
+        reward_distance = interval - abs(reward_value - reward_int * interval)
         # 调整对应的位置，后续作为坐标使用
         reward_int += self.N // 2
 
@@ -154,19 +160,19 @@ class DistributionalDQN(DoubleDQN):
                 new_distribution[i][n] += t.sum()
         '''
         # 原来的方法是每行，对每种动作类型的概率求和，相对较慢
-        # 这里改成每列操作，对于reward_value中一列，根据reward_int取出新分布每行中对应列，然后加上旧概率乘以距离即可
-        # 一部分循环通过索引，交给numpy,效率有提升
+        # 这里改成每列操作，对于reward_value中一列，
+        # 根据reward_int取出新分布每行中对应列，然后加上旧概率乘以距离除以间距即可
         # 编程的时候尽可能通过索引的操作代替循环
         new_distribution_2 = np.zeros(old_reward_distribution.shape)
         for n in range(self.N):
             each_row_index = (range(length), reward_int[:, n])
-            new_distribution_2[each_row_index] += old_reward_distribution[:, n] * reward_distance[:, n]
+            new_distribution_2[each_row_index] += old_reward_distribution[:, n] * reward_distance[:, n] / interval
 
-        reward_int = (reward_value / 0.1).astype('int')
+        reward_int = (reward_value / interval).astype('int')
         reward_int[reward_int < 0] -= 1
         reward_int[reward_int > 0] += 1
         reward_int += self.N // 2
-        reward_distance = 1 - reward_distance
+        reward_distance = interval - reward_distance
 
         '''
         for i in range(len(old_reward_distribution)):
@@ -180,27 +186,29 @@ class DistributionalDQN(DoubleDQN):
         reward_int[reward_int < 0] = 0
         for n in range(self.N):
             each_row_index = (range(length), reward_int[:, n])
-            new_distribution_2[each_row_index] += old_reward_distribution[:, n] * reward_distance[:, n]
+            new_distribution_2[each_row_index] += old_reward_distribution[:, n] * reward_distance[:, n] / interval
 
         return new_distribution_2
 
 
 if __name__ == '__main__':
     model = DistributionalDQN('iori')
-
-    for i in range(1, 2):
+    '''
+    for i in range(1, 3):
         try:
             print('train ', i)
-            for num in range(1, 2):
+            for num in range(1, 3):
                 model.train_model_with_sum_tree(i, [num], epochs=80)
+                # model.train_model(i, [num], epochs=80)
                 model.weight_copy()
         except:
             # print('no data in ', i)
             traceback.print_exc()
     model.save_model()
+
     '''
+
     raw_env = model.raw_data_generate(1, [1])
     train_env, train_index = model.train_env_generate(raw_env)
-    train_distribution, n_action = model.distributional_dqn_train_data(raw_env, train_env, train_index)
-    t = model.predict_model.predict([np.expand_dims(env[100], 0) for env in train_env])
-    '''
+    train_distribution, td_error, n_action = model.distributional_dqn_train_data(raw_env, train_env, train_index)
+    # t = model.predict_model.predict([np.expand_dims(env[100], 0) for env in train_env])

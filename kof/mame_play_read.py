@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 
 from kof.distributional_dqn import DistributionalDQN
-from kof.dqn_models import DoubleDQN, DuelingDQN, DuelingDQN_2
+from kof.value_based_models import DoubleDQN, DuelingDQN, DuelingDQN_2
 from kof.kof_command_mame import operation, restart, simulate
 
 '''
@@ -73,10 +73,10 @@ def train_on_mame(model, train=True, round_num=12):
                                 # 加个间隔，打train_interval局训练一次
                                 if count % train_interval == 0:
                                     for i in range(2):
-                                        model.train_model(folder_num, range(count - train_interval + 1, count + 1),
-                                                          epochs=epochs)
+                                        model.train_model_with_sum_tree(folder_num,
+                                                                        range(count - train_interval + 1, count + 1),
+                                                                        epochs=epochs)
                                     model.save_model()
-                                # 采用双曲线逼近1，起初greedy很小，但前期变化快，之后缓慢向常数项
 
                     tmp_action = []
                     tmp_env = []
@@ -84,8 +84,9 @@ def train_on_mame(model, train=True, round_num=12):
 
                     print("重开")
                     # 这里需要在第一局之前设置
+                    # 采用双曲线逼近1，起初greedy很小，但前期变化快，之后缓慢向常数项
                     if train:
-                        model.e_greedy = -1 / count + 1.1
+                        model.e_greedy = 0.6 * count / round_num + 0.6
                     print('greedy:', model.e_greedy)
 
                     time.sleep(4)
@@ -138,16 +139,16 @@ def train_on_mame(model, train=True, round_num=12):
 
 
 if __name__ == '__main__':
-    dqn_model = DistributionalDQN('iori')
+    # dqn_model = DistributionalDQN('iori')
     # dqn_model = DoubleDQN('iori')
-    # dqn_model = DuelingDQN_2('iori')
+    dqn_model = DuelingDQN_2('iori')
     # dqn_model = DuelingDQN('iori')
     # dqn_model = random_mojdel('iori')
     # model.load_model('1233')
     # model = random_model('kyo')
     folder_num = train_on_mame(dqn_model, True)
-    dqn_model.train_model(folder_num, epochs=20)
+    # dqn_model.train_model(folder_num, epochs=20)
     dqn_model.save_model()
 
     dqn_model.operation_analysis(folder_num)
-    dqn_model.model_test(dqn_model, [11])
+    dqn_model.value_test(folder_num, [1])

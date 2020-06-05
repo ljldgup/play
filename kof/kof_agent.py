@@ -99,11 +99,11 @@ class KofAgent:
 
             # 值要在[-1，1]左右,reward_sum太小反而容易过估计
             raw_env['raw_reward'] = life_reward
-            raw_env['reward'] = life_reward / 20
+            raw_env['reward'] = life_reward / 10
 
             # 当前步的reward实际上是上一步的，我一直没有上移，这是个巨大的错误
             raw_env['reward'] = raw_env['reward'].shift(-1).fillna(0)
-
+            '''
             # 根据胜负增加额外的报酬,pandas不允许切片或者搜索赋值，只能先这样
             end_index = (raw_env[raw_env['time'].diff(1).shift(-1).fillna(1) > 0]).index
             for idx in end_index:
@@ -112,6 +112,7 @@ class KofAgent:
                     raw_env.loc[idx]['reward'] = 1
                 else:
                     raw_env.loc[idx]['reward'] = -1
+            '''
 
             # 使用log(n+x)-log(n)缩放reward，防止少量特别大的动作影响收敛，目前来看适当的缩放，收敛效果好。
             # raw_env['reward'] = reward.map(
@@ -204,7 +205,8 @@ class KofAgent:
                 loss += self.predict_model.train_on_batch([env[index] for env in train_env], train_reward[index])
             loss_history.append(loss)
         for loss in loss_history:
-            print(loss)
+            # 根据标准公式，这里需要求个均值
+            print(loss / (len(train_reward) // batch_size))
         self.record['total_epochs'] += epochs
 
     def save_model(self, ):

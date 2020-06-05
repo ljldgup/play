@@ -32,7 +32,7 @@ data_dir = os.getcwd()
 # 位置距离卷积 + lstm + fc
 class DoubleDQN(KofAgent):
 
-    def __init__(self, role, model_name='double_dqn', reward_decay=0.98):
+    def __init__(self, role, model_name='double_dqn', reward_decay=0.96):
         super().__init__(role=role, model_name=model_name, reward_decay=reward_decay)
         # 把target_model移到value based文件中,因为policy based不需要
         self.target_model = self.build_model()
@@ -131,20 +131,22 @@ class DoubleDQN(KofAgent):
 
         next_max_reward_action = predict_model_prediction.argmax(axis=1)
         next_action_reward = target_model_prediction[range(len(train_index)), next_max_reward_action.astype('int')]
-        '''
+
         next_action_reward = np.roll(next_action_reward, -1)
         next_action_reward[time > 0] = 0
         reward += self.reward_decay * next_action_reward
-        '''
+
         # multi-Step Learning 一次性加上后面n步的衰减报酬
         # 同样的训练量下，multi_steps大的，网络会预测值绝对值迅速变大，
         # 考虑multi_steps = 1的情况加大训练量，值是否也与加大multi_steps的情况一样
+        '''
         multi_steps = 1
         for t in range(multi_steps):
             next_action_reward = np.roll(next_action_reward, -1)
             # 始终把最后一步设为0，由于移动的原因，0会被前移，所以不需要考虑之前的时间步
             next_action_reward[time > 0] = 0
             reward += self.reward_decay ** (t + 1) * next_action_reward
+        '''
 
         # 注意一定要取绝对值，不然很发生很严重的过估计
         td_error = abs(reward - predict_model_prediction[range(len(train_index)), action])
@@ -190,6 +192,7 @@ class DoubleDQN(KofAgent):
         ax1 = fig1.add_subplot(111)
         ax1.hist(train_reward.flatten(), bins=30, label=self.model_name)
         fig1.legend()
+
 
 # 正常dueling dqn
 # 将衰减降低至0.94，去掉了上次动作输入，将1p embedding带宽扩展到8，后效果比之前好了很多
@@ -310,6 +313,22 @@ class DuelingDQN_2(DoubleDQN):
         return model
 
 
+def train_model(model, folders, rounds):
+    print('-----------------------------')
+    print('train ', model.model_name)
+    for i in folders:
+        try:
+            for r in rounds:
+                    print('train ', i)
+                    # model.train_model(i, [r])
+                    model.train_model_with_sum_tree(i, [r], epochs=50)
+                    model.weight_copy()
+        except:
+            traceback.print_exc()
+        model.save_model()
+
+
+
 if __name__ == '__main__':
     models = [DuelingDQN('iori'), DoubleDQN('iori'), DuelingDQN_2('iori')]
     # model = DuelingDQN('iori')
@@ -318,34 +337,18 @@ if __name__ == '__main__':
     # model.model_test(2, [1,2])
     # model.predict_model.summary()
     # t = model.operation_analysis(5)
-    '''
-    for model in models:
-        print('-----------------------------')
-        print('train ', model.model_name)
-        for i in range(1, 2):
-            try:
-                print('train ', i)
-                for r in range(1, 2):
-                    # model.train_model(i, [r])
-                    model.train_model_with_sum_tree(i, [r])
-                    model.weight_copy()
-            except:
-                traceback.print_exc()
-        model.save_model()
 
-    '''
     for model in models:
-        print('-----------------------------')
-        print('test ', model.model_name)
-        model.model_test(1, [1])
-        model.value_test(1, [1])
+        train_model(model, list(range(6, 12)), list((range(1, 3))))
 
+    for model in models:
+        model.value_test(11, [1])
     '''
-    raw_env = model.raw_data_generate(1, [1])
+    raw_env = model.raw_data_generate(11, [11])
     train_env, train_index = model.train_env_generate(raw_env)
     train_reward, td_error, n_action = model.double_dqn_train_data(raw_env, train_env, train_index)
     t = model.predict_model.predict([np.expand_dims(env[100], 0) for env in train_env])
     # output = model.output_test([ev[50].reshape(1, *ev[50].shape) for ev in train_env])
 
-    model.model_test(12, [1])
+    model.model_test(11, [11])
     '''
