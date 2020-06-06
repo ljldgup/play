@@ -8,6 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 
 from kof.distributional_dqn import DistributionalDQN
+from kof.policy_based_model import ActorCritic
 from kof.value_based_models import DoubleDQN, DuelingDQN, DuelingDQN_2
 from kof.kof_command_mame import operation, restart, simulate
 
@@ -27,7 +28,7 @@ def train_on_mame(model, train=True, round_num=12):
     folder_num = 1
 
     # 训练间隔
-    train_interval = 1
+    train_interval = 8
 
     while os.path.exists(str(folder_num)):
         folder_num += 1
@@ -71,11 +72,11 @@ def train_on_mame(model, train=True, round_num=12):
                             # model.model_test(folder_num, [count])
                             if train:
                                 # 加个间隔，打train_interval局训练一次
+
+                                for i in range(2):
+                                    model.train_model_with_sum_tree(folder_num, [count], epochs=epochs)
+                                # 注意这里train_interval设置成1的话那么，每次训练实际上两个模型是一样的，就是nature dqn
                                 if count % train_interval == 0:
-                                    for i in range(2):
-                                        model.train_model_with_sum_tree(folder_num,
-                                                                        range(count - train_interval + 1, count + 1),
-                                                                        epochs=epochs)
                                     model.save_model()
 
                     tmp_action = []
@@ -139,6 +140,7 @@ def train_on_mame(model, train=True, round_num=12):
 
 
 if __name__ == '__main__':
+    # dqn_model = ActorCritic('iori')
     # dqn_model = DistributionalDQN('iori')
     # dqn_model = DoubleDQN('iori')
     dqn_model = DuelingDQN_2('iori')

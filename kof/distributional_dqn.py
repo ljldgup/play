@@ -203,11 +203,10 @@ if __name__ == '__main__':
             for num in range(1, 3):
                 model.train_model_with_sum_tree(i, [num], epochs=80)
                 # model.train_model(i, [num], epochs=80)
-                model.weight_copy()
         except:
             # print('no data in ', i)
             traceback.print_exc()
-    model.save_model()
+        model.save_model()
 
     '''
 

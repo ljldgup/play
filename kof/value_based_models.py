@@ -22,6 +22,12 @@ reward比例:不能太小，不然难以收敛
 改进点：
 残差网络
 transformer
+
+减小过估计的几个注意点
+经过一定计算后再更新target模型，不是每次训练后都加入，这点最重要
+reward注意不要计入多余的值, reward的范围不能太大大约在-1,1左右
+接近输出层的时候全连接后面不加bn层
+
 '''
 
 data_dir = os.getcwd()
@@ -30,9 +36,10 @@ data_dir = os.getcwd()
 # 普通DDQN，输出分开成多个fc，再合并
 # 这种方法违背网络共享信息的特点
 # 位置距离卷积 + lstm + fc
+# 接近BN层貌似一定程度上会导致过估计，所以暂时删掉
 class DoubleDQN(KofAgent):
 
-    def __init__(self, role, model_name='double_dqn', reward_decay=0.96):
+    def __init__(self, role, model_name='double_dqn', reward_decay=0.99):
         super().__init__(role=role, model_name=model_name, reward_decay=reward_decay)
         # 把target_model移到value based文件中,因为policy based不需要
         self.target_model = self.build_model()
@@ -63,22 +70,22 @@ class DoubleDQN(KofAgent):
         conv_position = layers.LeakyReLU(0.05)(conv_position)
 
         role_distance = layers.Subtract()([role1_x_y, role2_x_y])
-        role_distance = BatchNormalization()(role_distance)
+        conv_distance = layers.SeparableConv1D(4, 2, padding='same', strides=1, kernel_initializer='he_uniform')(
+            role_distance)
+        conv_distance = BatchNormalization()(conv_distance)
 
         concatenate_status = concatenate(
-            [role1_actions_embedding, conv_position, role_distance, role1_energy_embedding,
+            [role1_actions_embedding, conv_position, conv_distance, role1_energy_embedding,
              role2_actions_embedding, role2_energy_embedding, role2_baoqi_embedding])
         lstm_status = CuDNNLSTM(512)(concatenate_status)
 
-        t_status = layers.Dense(256, kernel_initializer='he_uniform')(lstm_status)
-        t_status = BatchNormalization()(t_status)
+        t_status = layers.Dense(512, kernel_initializer='he_uniform')(lstm_status)
+        # t_status = BatchNormalization()(t_status)
         t_status = layers.LeakyReLU(0.05)(t_status)
         output_layers = []
         for a in range(self.action_num):
             t_layer = layers.Dense(128, kernel_initializer='he_uniform')(t_status)
-            t_layer = BatchNormalization()(t_layer)
             t_layer = layers.LeakyReLU(0.05)(t_layer)
-            # 注意这里softmax
             t_layer = layers.Dense(1, name='action_{}'.format(a))(t_layer)
             output_layers.append(t_layer)
 
@@ -90,31 +97,7 @@ class DoubleDQN(KofAgent):
 
         return model
 
-    # nature dqn 训练数据生成
-    def nature_dqn_reward_generate(self, raw_env, train_env, train_index):
-        reward = raw_env['reward'].reindex(train_index)
-        action = raw_env['action'].reindex(train_index)
-        action = action.astype('int')
-
-        target_model_prediction = self.target_model.predict(train_env)
-        predict_model_prediction = self.predict_model.predict(train_env)
-        # pre_prediction = predict_model_prediction.copy()
-        pre_actions = predict_model_prediction.argmax(axis=1)
-
-        # yj=Rj+γmaxa′Q′(ϕ(S′j),A′j,w′)
-        # 下一步的最大报酬
-        next_action_reward = target_model_prediction.max(axis=1)
-        next_action_reward = np.roll(next_action_reward, -1)
-
-        # 比上次时间大，说明重来了，上次就是end，fillna用于填充结尾，结尾也是end
-        time = raw_env['time'].reindex(train_index).diff(1).shift(-1).fillna(1).values
-        # 最后一此操作，下一次的报酬为0
-        next_action_reward[time > 0] = 0
-        reward += next_action_reward * self.reward_decay
-        td_error = reward - predict_model_prediction[range(len(train_index)), action]
-        predict_model_prediction[range(len(train_index)), action.values] = reward
-        return [predict_model_prediction, td_error, [pre_actions, action]]
-
+    # 每次训练完就直接跟新target的参数就是nature dqn
     def double_dqn_train_data(self, raw_env, train_env, train_index):
         reward = raw_env['reward'].reindex(train_index)
         action = raw_env['action'].reindex(train_index)
@@ -134,6 +117,10 @@ class DoubleDQN(KofAgent):
 
         next_action_reward = np.roll(next_action_reward, -1)
         next_action_reward[time > 0] = 0
+
+        print(predict_model_prediction[range(20), action[:20]])
+        print(reward.values[:20])
+        print(next_action_reward[:20])
         reward += self.reward_decay * next_action_reward
 
         # multi-Step Learning 一次性加上后面n步的衰减报酬
@@ -155,8 +142,8 @@ class DoubleDQN(KofAgent):
         predict_model_prediction[range(len(train_index)), action] = reward
 
         # 上下限裁剪，防止过估计
-        # predict_model_prediction[predict_model_prediction > 1] = 1
-        # predict_model_prediction[predict_model_prediction < -1] = -1
+        predict_model_prediction[predict_model_prediction > 10] = 10
+        predict_model_prediction[predict_model_prediction < -10] = -10
         return [predict_model_prediction, td_error, [pre_actions, action.values]]
 
     def raw_env_data_to_input(self, raw_data, action):
@@ -170,6 +157,10 @@ class DoubleDQN(KofAgent):
 
     def weight_copy(self):
         self.target_model.set_weights(self.predict_model.get_weights())
+
+    def save_model(self, ):
+        self.weight_copy()
+        KofAgent.save_model(self)
 
     def value_test(self, folder, round_nums):
         # q值分布可视化
@@ -219,22 +210,23 @@ class DuelingDQN(DoubleDQN):
         role2_x_y = Input(shape=(self.input_steps, 2), name='role2_x_y')
 
         role_position = concatenate([role1_x_y, role2_x_y])
-        role_distance = layers.Subtract()([role1_x_y, role2_x_y])
         conv_position = layers.SeparableConv1D(8, 1, padding='same', strides=1, kernel_initializer='he_uniform')(
             role_position)
         conv_position = BatchNormalization()(conv_position)
         conv_position = layers.LeakyReLU(0.05)(conv_position)
 
+        role_distance = layers.Subtract()([role1_x_y, role2_x_y])
+        conv_distance = layers.SeparableConv1D(4, 2, padding='same', strides=1, kernel_initializer='he_uniform')(
+            role_distance)
+        conv_distance = BatchNormalization()(conv_distance)
+
         concatenate_status = concatenate(
-            [role1_actions_embedding, role_distance, conv_position, role1_energy_embedding,
+            [role1_actions_embedding, conv_distance, conv_position, role1_energy_embedding,
              role2_actions_embedding, role2_energy_embedding, role2_baoqi_embedding])
 
         lstm_status = CuDNNLSTM(512)(concatenate_status)
 
         t_status = layers.Dense(512, kernel_initializer='he_uniform')(lstm_status)
-        t_status = layers.LeakyReLU(0.05)(t_status)
-        t_status = layers.Dense(512, kernel_initializer='he_uniform')(t_status)
-        t_status = BatchNormalization()(t_status)
         t_status = layers.LeakyReLU(0.05)(t_status)
 
         # 攻击动作，则采用基础标量 + 均值为0的向量策略
@@ -277,24 +269,27 @@ class DuelingDQN_2(DoubleDQN):
         role2_x_y = Input(shape=(self.input_steps, 2), name='role2_x_y')
 
         role_position = concatenate([role1_x_y, role2_x_y])
+        conv_position = layers.SeparableConv1D(8, 1, padding='same', strides=1, kernel_initializer='he_uniform')(
+            role_position)
+        conv_position = BatchNormalization()(conv_position)
+        conv_position = layers.LeakyReLU(0.05)(conv_position)
 
         role_distance = layers.Subtract()([role1_x_y, role2_x_y])
-        role_distance = BatchNormalization()(role_distance)
+        conv_distance = layers.SeparableConv1D(4, 2, padding='same', strides=1, kernel_initializer='he_uniform')(
+            role_distance)
+        conv_distance = BatchNormalization()(conv_distance)
 
         lstm_role1_status = CuDNNLSTM(256)(
-            concatenate([role1_actions_embedding, role_position, role_distance, role1_energy_embedding]))
+            concatenate([role1_actions_embedding, conv_position, conv_distance, role1_energy_embedding]))
         lstm_role2_status = CuDNNLSTM(256)(
             concatenate(
-                [role2_actions_embedding, role_position, role_distance, role2_energy_embedding, role2_baoqi_embedding]))
+                [role2_actions_embedding, conv_position, conv_distance, role2_energy_embedding, role2_baoqi_embedding]))
         # lstm_position = CuDNNLSTM(128)(position)
 
         concatenated_status = concatenate(
             [lstm_role1_status, lstm_role2_status])
 
         t_status = layers.Dense(512, kernel_initializer='he_uniform')(concatenated_status)
-        t_status = layers.LeakyReLU(0.05)(t_status)
-        t_status = layers.Dense(512, kernel_initializer='he_uniform')(t_status)
-        t_status = BatchNormalization()(t_status)
         t_status = layers.LeakyReLU(0.05)(t_status)
 
         value = layers.Dense(1)(t_status)
@@ -319,14 +314,16 @@ def train_model(model, folders, rounds):
     for i in folders:
         try:
             for r in rounds:
-                    print('train ', i)
-                    # model.train_model(i, [r])
-                    model.train_model_with_sum_tree(i, [r], epochs=50)
-                    model.weight_copy()
+                print('train ', i)
+                # model.train_model(i, [r])
+                model.train_model_with_sum_tree(i, [r], epochs=30)
+                # 这种直接拷贝的效果和nature DQN其实没有区别。。所以放到外层去拷贝，训练时应该加大拷贝的间隔
+                # model.weight_copy()
         except:
             traceback.print_exc()
-        model.save_model()
-
+        if i % 6:
+            # 两个文件的数据更新一次target
+            model.save_model()
 
 
 if __name__ == '__main__':
@@ -339,16 +336,16 @@ if __name__ == '__main__':
     # t = model.operation_analysis(5)
 
     for model in models:
-        train_model(model, list(range(6, 12)), list((range(1, 3))))
+        train_model(model, list(range(1, 20)), list((range(1, 2))))
 
     for model in models:
         model.value_test(11, [1])
     '''
-    raw_env = model.raw_data_generate(11, [11])
+    raw_env = model.raw_data_generate(20, [12])
     train_env, train_index = model.train_env_generate(raw_env)
     train_reward, td_error, n_action = model.double_dqn_train_data(raw_env, train_env, train_index)
     t = model.predict_model.predict([np.expand_dims(env[100], 0) for env in train_env])
     # output = model.output_test([ev[50].reshape(1, *ev[50].shape) for ev in train_env])
-
-    model.model_test(11, [11])
+    # train_reward[range(len(n_action[1])), n_action[1]]
+    model.model_test(20, [12])
     '''

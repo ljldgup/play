@@ -97,20 +97,19 @@ class KofAgent:
 
             # 值要在[-1，1]左右,reward_sum太小反而容易过估计
             raw_env['raw_reward'] = life_reward
-            raw_env['reward'] = life_reward / 10
+            raw_env['reward'] = life_reward / 20
 
             # 当前步的reward实际上是上一步的，我一直没有上移，这是个巨大的错误
             raw_env['reward'] = raw_env['reward'].shift(-1).fillna(0)
-            '''
+
             # 根据胜负增加额外的报酬,pandas不允许切片或者搜索赋值，只能先这样
             end_index = (raw_env[raw_env['time'].diff(1).shift(-1).fillna(1) > 0]).index
             for idx in end_index:
                 # 这里暂时不明白为什么是loc,我是按索引取得，按理应该是iloc
                 if raw_env.loc[idx]['role1_life'] > raw_env.loc[idx]['role2_life']:
-                    raw_env.loc[idx]['reward'] = 1
+                    raw_env.loc[idx]['reward'] = 0.5
                 else:
-                    raw_env.loc[idx]['reward'] = -1
-            '''
+                    raw_env.loc[idx]['reward'] = -0.5
 
             # 使用log(n+x)-log(n)缩放reward，防止少量特别大的动作影响收敛，目前来看适当的缩放，收敛效果好。
             # raw_env['reward'] = reward.map(
@@ -160,7 +159,7 @@ class KofAgent:
     # 最开始用的不考虑长期收益的模型，在pandas钟使用rolling来使其拥有少量的长期效果
     # 现在使用该函数实现多态
     def train_reward_generate(self, raw_env, train_env, train_index):
-        pass
+        return [None, [None, None]]
 
     # 在线学习可以batch_size设置成
     # 改成所有数据何在一起，打乱顺序，使用batch 训练，速度快了很多
@@ -207,7 +206,7 @@ class KofAgent:
             print(loss / (len(train_reward) // batch_size))
         self.record['total_epochs'] += epochs
 
-    def save_model(self, ):
+    def save_model(self):
         if not os.path.exists('{}/model'.format(data_dir)):
             os.mkdir('{}/model'.format(data_dir))
         self.predict_model.save_weights('{}/model/{}_{}'.format(data_dir, self.role, self.model_name))
