@@ -149,7 +149,7 @@ class DoubleDQN(KofAgent):
         '''
 
         # 注意一定要取绝对值，不然很发生很严重的过估计
-        td_error = abs(reward - predict_model_prediction[range(len(train_index)), action])
+        td_error = reward - predict_model_prediction[range(len(train_index)), action]
         td_error = td_error.values
         # 这里报action过多很可能是人物不对
         predict_model_prediction[range(len(train_index)), action] = reward

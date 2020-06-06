@@ -54,8 +54,6 @@ class KofAgent:
         if os.path.exists('{}/model/{}_{}.index'.format(data_dir, self.role, self.model_name)):
             print('load model {}'.format(self.role))
             self.load_model()
-        else:
-            self.save_model()
 
     def choose_action(self, raw_data, action, random_choose=False):
         if random_choose or random.random() > self.e_greedy:
@@ -162,7 +160,7 @@ class KofAgent:
     # 最开始用的不考虑长期收益的模型，在pandas钟使用rolling来使其拥有少量的长期效果
     # 现在使用该函数实现多态
     def train_reward_generate(self, raw_env, train_env, train_index):
-        return [None, [None, None]]
+        pass
 
     # 在线学习可以batch_size设置成
     # 改成所有数据何在一起，打乱顺序，使用batch 训练，速度快了很多
@@ -195,7 +193,7 @@ class KofAgent:
         raw_env = self.raw_data_generate(folder, round_nums)
         train_env, train_index = self.train_env_generate(raw_env)
         train_reward, td_error, action = self.train_reward_generate(raw_env, train_env, train_index)
-        sum_tree = SumTree(td_error)
+        sum_tree = SumTree(abs(td_error))
         loss_history = []
         print('train {}/{} {} epochs'.format(folder, round_nums, epochs))
         for e in range(epochs):

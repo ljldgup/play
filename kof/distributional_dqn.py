@@ -80,8 +80,11 @@ class DistributionalDQN(DoubleDQN):
         t_status = layers.LeakyReLU(0.05)(t_status)
         probability_distribution_layers = []
         for a in range(self.action_num):
+            t_layer = layers.Dense(128, kernel_initializer='he_uniform')(t_status)
+            t_layer = BatchNormalization()(t_layer)
+            t_layer = layers.LeakyReLU(0.05)(t_layer)
             t_layer = layers.Dense(self.N, kernel_initializer='he_uniform',
-                                   name='action_{}_distribution'.format(a))(t_status)
+                                   name='action_{}_distribution'.format(a))(t_layer)
             # 注意这里softmax 不用he_uniform初始化
             t_layer = layers.Softmax()(t_layer)
             probability_distribution_layers.append(t_layer)
@@ -137,7 +140,7 @@ class DistributionalDQN(DoubleDQN):
         new_distribution[time > 0] = current_reward_distribution[time > 0]
         # 改用交叉熵
         td_error = new_distribution * np.log(predict_model_prediction[range(len(train_index)), action])
-        td_error = abs(td_error.sum(axis=1))
+        td_error = td_error.sum(axis=1)
 
         predict_model_prediction[range(len(train_index)), action] = new_distribution
 
