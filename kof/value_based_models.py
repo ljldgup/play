@@ -25,9 +25,8 @@ transformer
 
 减小过估计的几个注意点
 经过一定计算后再更新target模型，不是每次训练后都加入，这点最重要
-reward注意不要计入多余的值, reward的范围不能太大大约在-1,1左右
-接近输出层的时候全连接后面不加bn层
-
+reward注意不要计入多余的值, reward的范围不能太大，大约在大约在0.5左右
+接近输出层的时候全连接后面不加bn层,
 '''
 
 data_dir = os.getcwd()
@@ -39,7 +38,7 @@ data_dir = os.getcwd()
 # 接近BN层貌似一定程度上会导致过估计，所以暂时删掉
 class DoubleDQN(KofAgent):
 
-    def __init__(self, role, model_name='double_dqn', reward_decay=0.99):
+    def __init__(self, role, model_name='double_dqn', reward_decay=0.96):
         super().__init__(role=role, model_name=model_name, reward_decay=reward_decay)
         # 把target_model移到value based文件中,因为policy based不需要
         self.target_model = self.build_model()
@@ -113,37 +112,44 @@ class DoubleDQN(KofAgent):
         time = raw_env['time'].reindex(train_index).diff(1).shift(-1).fillna(1).values
 
         next_max_reward_action = predict_model_prediction.argmax(axis=1)
-        next_action_reward = target_model_prediction[range(len(train_index)), next_max_reward_action.astype('int')]
-
-        next_action_reward = np.roll(next_action_reward, -1)
-        next_action_reward[time > 0] = 0
-
+        next_q = target_model_prediction[range(len(train_index)), next_max_reward_action.astype('int')]
+        '''
         print(predict_model_prediction[range(20), action[:20]])
         print(reward.values[:20])
-        print(next_action_reward[:20])
-        reward += self.reward_decay * next_action_reward
-
-        # multi-Step Learning 一次性加上后面n步的衰减报酬
-        # 同样的训练量下，multi_steps大的，网络会预测值绝对值迅速变大，
+        print(next_q[:20])
+        reward += self.reward_decay * next_q
+        '''
+        # multi-Step Learning 一次性加上后面n步的实际报酬 在加上n+1目标网络的q值
+        # 这样能加速训练，但n过大不稳定
+        # multi_steps适合再训练初期网络与实际偏差较大的情况下使用
         # 考虑multi_steps = 1的情况加大训练量，值是否也与加大multi_steps的情况一样
-        '''
-        multi_steps = 1
-        for t in range(multi_steps):
-            next_action_reward = np.roll(next_action_reward, -1)
-            # 始终把最后一步设为0，由于移动的原因，0会被前移，所以不需要考虑之前的时间步
-            next_action_reward[time > 0] = 0
-            reward += self.reward_decay ** (t + 1) * next_action_reward
-        '''
 
-        # 注意一定要取绝对值，不然很发生很严重的过估计
+        multi_steps = 15
+        next_reward = reward.copy()
+        # 将1到multi_steps个步骤的r，乘以衰减后相加
+        # 这里原本有一个所以只需要做multi_steps - 1 次
+        for i in range(multi_steps - 1):
+            next_reward = np.roll(next_reward, -1)
+            # 从下一个round往上移动的，reward为0
+            next_reward[time > 0] = 0
+            reward += next_reward * self.reward_decay ** (i + 1)
+
+        # 加上target model第multi_steps+1个步骤的Q值
+        for i in range(multi_steps):
+            next_q = np.roll(next_q, -1)
+            # 从下一个round往上移动的，reward为0
+            next_q[time > 0] = 0
+        reward += next_q * self.reward_decay ** multi_steps
+
         td_error = reward - predict_model_prediction[range(len(train_index)), action]
         td_error = td_error.values
+
         # 这里报action过多很可能是人物不对
         predict_model_prediction[range(len(train_index)), action] = reward
 
         # 上下限裁剪，防止过估计
-        predict_model_prediction[predict_model_prediction > 10] = 10
-        predict_model_prediction[predict_model_prediction < -10] = -10
+        predict_model_prediction[predict_model_prediction > 3] = 3
+        predict_model_prediction[predict_model_prediction < -3] = -3
         return [predict_model_prediction, td_error, [pre_actions, action.values]]
 
     def raw_env_data_to_input(self, raw_data, action):
@@ -311,6 +317,7 @@ class DuelingDQN_2(DoubleDQN):
 def train_model(model, folders, rounds):
     print('-----------------------------')
     print('train ', model.model_name)
+    count = 0
     for i in folders:
         try:
             for r in rounds:
@@ -319,24 +326,26 @@ def train_model(model, folders, rounds):
                 model.train_model_with_sum_tree(i, [r], epochs=30)
                 # 这种直接拷贝的效果和nature DQN其实没有区别。。所以放到外层去拷贝，训练时应该加大拷贝的间隔
                 # model.weight_copy()
+                count += 1
         except:
             traceback.print_exc()
-        if i % 6:
+        if count >= 8:
             # 两个文件的数据更新一次target
             model.save_model()
+            count = 0
 
 
 if __name__ == '__main__':
-    models = [DuelingDQN('iori'), DoubleDQN('iori'), DuelingDQN_2('iori')]
-    # model = DuelingDQN('iori')
+    # models = [DuelingDQN('iori'), DoubleDQN('iori'), DuelingDQN_2('iori')]
+    model = DuelingDQN('iori')
 
     # model.model_test(1, [1,2])
     # model.model_test(2, [1,2])
     # model.predict_model.summary()
     # t = model.operation_analysis(5)
-
+    '''
     for model in models:
-        train_model(model, list(range(1, 20)), list((range(1, 2))))
+        train_model(model, list(range(1, 20)), list((range(1, 7))))
 
     for model in models:
         model.value_test(11, [1])
@@ -348,4 +357,3 @@ if __name__ == '__main__':
     # output = model.output_test([ev[50].reshape(1, *ev[50].shape) for ev in train_env])
     # train_reward[range(len(n_action[1])), n_action[1]]
     model.model_test(20, [12])
-    '''
