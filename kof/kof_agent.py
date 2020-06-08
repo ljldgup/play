@@ -5,9 +5,11 @@ import time
 
 import pandas as pd
 import numpy as np
-
-from tensorflow.python.keras import Model
-
+from tensorflow.keras import backend as K
+from tensorflow.keras import layers
+from tensorflow.python.keras import Input, Model
+from tensorflow.python.keras.layers import concatenate, BatchNormalization, CuDNNGRU, CuDNNLSTM
+from tensorflow.python.keras.optimizers import Adam
 from kof.kof_command_mame import global_set, role_commands
 from kof.sumtree import SumTree
 
@@ -17,9 +19,10 @@ class RandomAgent:
         self.model_name = 'random'
         self.role = role
         self.action_num = len(role_commands[role])
+        self.input_steps = 1
         global_set(role)
 
-    def choose_action(self, *args):
+    def choose_action(self, *args, **kwargs):
         return random.randint(0, self.action_num - 1)
 
     def save_model(self):
@@ -30,23 +33,35 @@ data_dir = os.getcwd()
 env_colomn = ['role1_action', 'role2_action',
               'role1_energy', 'role2_energy',
               'role1_position_x', 'role1_position_y',
-              'role2_position_x', 'role2_position_y', 'baoqi', 'role1', 'role2', 'guard_value',
+              'role2_position_x', 'role2_position_y', 'role1_baoqi', 'role2_baoqi', 'role1', 'role2',
+              'role1_guard_value',
               'role1_combo_count',
               'role1_life', 'role2_life',
               'time', 'coins', ]
 
 
+# 选择效果比较好，即文件比较大的记录
+def get_maxsize_file(folder):
+    files = os.listdir('{}/{}'.format(data_dir, folder))
+    data_files = filter(lambda f: '.' in f, files)
+    round_nums = list(set([file.split('.')[0] for file in data_files]))
+    round_nums.sort()
+    file_size = map(lambda num: os.path.getsize('{}/{}/{}.env'.format(data_dir, folder, num), round_nums))
+    # 取前6个
+    return np.array(file_size).argsort()[0:6]
+
+
 class KofAgent:
     def __init__(self, role, model_name,
                  reward_decay=0.94,
-                 input_steps=6):
+                 input_steps=8):
         self.role = role
         self.model_name = model_name
         self.reward_decay = reward_decay
         self.e_greedy = 0.95
         # 输入步数
         self.input_steps = input_steps
-
+        self.multi_steps = 1
         global_set(role)
         self.action_num = len(role_commands[role])
         self.predict_model = self.build_model()
@@ -97,7 +112,7 @@ class KofAgent:
 
             # 值要在[-1，1]左右,reward_sum太小反而容易过估计
             raw_env['raw_reward'] = life_reward
-            raw_env['reward'] = life_reward / 20
+            raw_env['reward'] = life_reward / 40
 
             # 当前步的reward实际上是上一步的，我一直没有上移，这是个巨大的错误
             raw_env['reward'] = raw_env['reward'].shift(-1).fillna(0)
@@ -131,7 +146,8 @@ class KofAgent:
             env = raw_env[['role1_action', 'role2_action',
                            'role1_energy', 'role2_energy',
                            'role1_position_x', 'role1_position_y',
-                           'role2_position_x', 'role2_position_y', 'baoqi']].loc[index - self.input_steps + 1:index]
+                           'role2_position_x', 'role2_position_y', 'role1_baoqi', 'role2_baoqi']].loc[
+                  index - self.input_steps + 1:index]
             action = raw_env['action'].loc[index - self.input_steps:index - 1]
 
             # 之前能够去除time_steps个连续数据，在操作
@@ -164,19 +180,15 @@ class KofAgent:
     # 在线学习可以batch_size设置成
     # 改成所有数据何在一起，打乱顺序，使用batch 训练，速度快了很多
     # batch_size的选取不同，损失表现完全不一样
-    def train_model(self, folder, round_nums=[], batch_size=32, epochs=30):
-        if not round_nums:
-            files = os.listdir('{}/{}'.format(data_dir, folder))
-            data_files = filter(lambda f: '.' in f, files)
-            round_nums = list(set([file.split('.')[0] for file in data_files]))
+    def train_model(self, folder, round_nums=[], batch_size=64, epochs=30):
 
         raw_env = self.raw_data_generate(folder, round_nums)
         train_env, train_index = self.train_env_generate(raw_env)
-        train_reward, td_error, action = self.train_reward_generate(raw_env, train_env, train_index)
+        train_target, td_error, action = self.train_reward_generate(raw_env, train_env, train_index)
 
         random_index = np.random.permutation(len(train_index))
         # verbose参数控制输出，这里每个epochs输出一次
-        self.predict_model.fit([env[random_index] for env in train_env], train_reward[random_index],
+        self.predict_model.fit([env[random_index] for env in train_env], train_target[random_index],
                                batch_size=batch_size,
                                epochs=epochs, verbose=2)
 
@@ -191,19 +203,19 @@ class KofAgent:
 
         raw_env = self.raw_data_generate(folder, round_nums)
         train_env, train_index = self.train_env_generate(raw_env)
-        train_reward, td_error, action = self.train_reward_generate(raw_env, train_env, train_index)
+        train_target, td_error, action = self.train_reward_generate(raw_env, train_env, train_index)
         sum_tree = SumTree(abs(td_error))
         loss_history = []
         print('train {}/{} {} epochs'.format(folder, round_nums, epochs))
         for e in range(epochs):
             loss = 0
-            for i in range(len(train_reward) // batch_size):
+            for i in range(len(train_target) // batch_size):
                 index = sum_tree.gen_batch_index(batch_size)
-                loss += self.predict_model.train_on_batch([env[index] for env in train_env], train_reward[index])
+                loss += self.predict_model.train_on_batch([env[index] for env in train_env], train_target[index])
             loss_history.append(loss)
         for loss in loss_history:
             # 根据标准公式，这里需要求个均值
-            print(loss / (len(train_reward) // batch_size))
+            print(loss / (len(train_target) // batch_size))
         self.record['total_epochs'] += epochs
 
     def save_model(self):
@@ -217,17 +229,70 @@ class KofAgent:
     def load_model(self):
         self.predict_model.load_weights('{}/model/{}_{}'.format(data_dir, self.role, self.model_name))
 
-    def build_model(self):
-        pass
+    # 模型输入+lstm的公用部分
+    def build_shared_model(self):
+        role1_actions = Input(shape=(self.input_steps,), name='role1_actions')
+        role2_actions = Input(shape=(self.input_steps,), name='role2_actions')
+        role1_actions_embedding = layers.Embedding(512, 8, name='role1_actions_embedding')(role1_actions)
+        role2_actions_embedding = layers.Embedding(512, 8, name='role2_actions_embedding')(role2_actions)
+
+        role1_energy = Input(shape=(1,), name='role1_energy')
+        role1_energy_embedding = layers.Embedding(5, 2, name='role1_energy_embedding')(role1_energy)
+        role2_energy = Input(shape=(1,), name='role2_energy')
+        role2_energy_embedding = layers.Embedding(5, 2, name='role2_energy_embedding')(role2_energy)
+
+        role1_baoqi = Input(shape=(1,), name='role1_baoqi')
+        role1_baoqi_embedding = layers.Embedding(2, 1, name='role1_baoqi_embedding')(role1_baoqi)
+        role2_baoqi = Input(shape=(1,), name='role2_baoqi')
+        role2_baoqi_embedding = layers.Embedding(2, 1, name='role2_baoqi_embedding')(role2_baoqi)
+
+        role1_x_y = Input(shape=(self.input_steps, 2), name='role1_x_y')
+        role2_x_y = Input(shape=(self.input_steps, 2), name='role2_x_y')
+
+        role_position = concatenate([role1_x_y, role2_x_y])
+        conv_position = layers.SeparableConv1D(8, 1, padding='same', strides=1, kernel_initializer='he_uniform')(
+            role_position)
+        conv_position = BatchNormalization()(conv_position)
+        conv_position = layers.LeakyReLU(0.05)(conv_position)
+
+        role_distance = layers.Subtract()([role1_x_y, role2_x_y])
+        conv_distance = layers.SeparableConv1D(4, 2, padding='same', strides=1, kernel_initializer='he_uniform')(
+            role_distance)
+        conv_distance = BatchNormalization()(conv_distance)
+
+        action_input = Input(shape=(self.input_steps,), name='action_input')
+        action_input_embedding = layers.Embedding(self.action_num, 4, name='action_input_embedding')(action_input)
+
+        concatenate_status = concatenate(
+            [role1_actions_embedding, conv_position, conv_distance,
+             action_input_embedding, role2_actions_embedding])
+        lstm_status = CuDNNLSTM(512)(concatenate_status)
+
+        t_status = layers.Dense(512, kernel_initializer='he_uniform')(lstm_status)
+        t_status = BatchNormalization()(t_status)
+        t_status = layers.LeakyReLU(0.05)(t_status)
+
+        # 曝气应该是个综合性影响，所以直接加在最后
+        t_status = layers.concatenate(
+            [t_status, K.squeeze(role1_baoqi_embedding, 1), K.squeeze(role2_baoqi_embedding, 1),
+             K.squeeze(role1_energy_embedding, 1),
+             K.squeeze(role2_energy_embedding, 1)])
+
+        shared_model = Model([role1_actions, role2_actions, role1_energy, role2_energy,
+                              role1_x_y, role2_x_y, role1_baoqi, role2_baoqi, action_input], t_status)
+        # 这里模型不能编译，不然后面无法扩充
+        return shared_model
 
     # 游戏运行时把原始环境输入，分割成模型能接受的输入，在具体的模型可以修改
     def raw_env_data_to_input(self, raw_data, action):
-        return [raw_data[:, :, 0], raw_data[:, :, 1], raw_data[:, :, 2], raw_data[:, :, 3],
-                raw_data[:, :, 4:6], raw_data[:, :, 6:8], raw_data[:, :, 8]]
+        # 这里energy改成一个只输入最后一个,这里输出的形状应该就是1，貌似在keras中也能正常运作
+        # 动作，空间取所有，状态类的只取最后步
+        return [raw_data[:, :, 0], raw_data[:, :, 1], raw_data[:, -1, 2], raw_data[:, -1, 3],
+                raw_data[:, :, 4:6], raw_data[:, :, 6:8], raw_data[:, -1, 8], raw_data[:, -1, 9], action]
 
     # 这里返回的list要和raw_env_data_to_input返回的大小一样
     def empty_env(self):
-        return [[], [], [], [], [], [], []]
+        return [[], [], [], [], [], [], [], [], []]
 
     def get_record(self):
         if os.path.exists('{}/model/{}_{}_record'.format(data_dir, self.role, self.model_name)):

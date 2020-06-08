@@ -26,7 +26,6 @@ transformer
 减小过估计的几个注意点
 经过一定计算后再更新target模型，不是每次训练后都加入，这点最重要
 reward注意不要计入多余的值, reward的范围不能太大，大约在大约在0.5左右
-接近输出层的时候全连接后面不加bn层,
 '''
 
 data_dir = os.getcwd()
@@ -38,59 +37,18 @@ data_dir = os.getcwd()
 # 接近BN层貌似一定程度上会导致过估计，所以暂时删掉
 class DoubleDQN(KofAgent):
 
-    def __init__(self, role, model_name='double_dqn', reward_decay=0.96):
+    def __init__(self, role, model_name='double_dqn', reward_decay=0.98):
         super().__init__(role=role, model_name=model_name, reward_decay=reward_decay)
         # 把target_model移到value based文件中,因为policy based不需要
         self.target_model = self.build_model()
-        self.weight_copy()
+        self.target_model.set_weights(self.predict_model.get_weights())
         self.train_reward_generate = self.double_dqn_train_data
 
     def build_model(self):
-        role1_actions = Input(shape=(self.input_steps,), name='role1_actions')
-        role2_actions = Input(shape=(self.input_steps,), name='role2_actions')
-        role1_actions_embedding = layers.Embedding(512, 8, name='role1_actions_embedding')(role1_actions)
-        role2_actions_embedding = layers.Embedding(512, 8, name='role2_actions_embedding')(role2_actions)
-
-        role1_energy = Input(shape=(self.input_steps,), name='role1_energy')
-        role1_energy_embedding = layers.Embedding(5, 2, name='role1_energy_embedding')(role1_energy)
-        role2_energy = Input(shape=(self.input_steps,), name='role2_energy')
-        role2_energy_embedding = layers.Embedding(5, 2, name='role2_energy_embedding')(role2_energy)
-
-        role2_baoqi = Input(shape=(self.input_steps,), name='role2_baoqi')
-        role2_baoqi_embedding = layers.Embedding(2, 2, name='role2_baoqi_embedding')(role2_baoqi)
-
-        role1_x_y = Input(shape=(self.input_steps, 2), name='role1_x_y')
-        role2_x_y = Input(shape=(self.input_steps, 2), name='role2_x_y')
-
-        role_position = concatenate([role1_x_y, role2_x_y])
-        conv_position = layers.SeparableConv1D(8, 1, padding='same', strides=1, kernel_initializer='he_uniform')(
-            role_position)
-        conv_position = BatchNormalization()(conv_position)
-        conv_position = layers.LeakyReLU(0.05)(conv_position)
-
-        role_distance = layers.Subtract()([role1_x_y, role2_x_y])
-        conv_distance = layers.SeparableConv1D(4, 2, padding='same', strides=1, kernel_initializer='he_uniform')(
-            role_distance)
-        conv_distance = BatchNormalization()(conv_distance)
-
-        concatenate_status = concatenate(
-            [role1_actions_embedding, conv_position, conv_distance, role1_energy_embedding,
-             role2_actions_embedding, role2_energy_embedding, role2_baoqi_embedding])
-        lstm_status = CuDNNLSTM(512)(concatenate_status)
-
-        t_status = layers.Dense(512, kernel_initializer='he_uniform')(lstm_status)
-        # t_status = BatchNormalization()(t_status)
-        t_status = layers.LeakyReLU(0.05)(t_status)
-        output_layers = []
-        for a in range(self.action_num):
-            t_layer = layers.Dense(128, kernel_initializer='he_uniform')(t_status)
-            t_layer = layers.LeakyReLU(0.05)(t_layer)
-            t_layer = layers.Dense(1, name='action_{}'.format(a))(t_layer)
-            output_layers.append(t_layer)
-
-        output = concatenate(output_layers)
-        model = Model([role1_actions, role2_actions, role1_energy, role2_energy, role1_x_y, role2_x_y,
-                       role2_baoqi], output)
+        shared_model = self.build_shared_model()
+        t_status = shared_model.output
+        output = layers.Dense(self.action_num, kernel_initializer='he_uniform')(t_status)
+        model = Model(shared_model.input, output)
 
         model.compile(optimizer=Adam(lr=0.00001), loss='mse')
 
@@ -119,27 +77,25 @@ class DoubleDQN(KofAgent):
         print(next_q[:20])
         reward += self.reward_decay * next_q
         '''
-        # multi-Step Learning 一次性加上后面n步的实际报酬 在加上n+1目标网络的q值
-        # 这样能加速训练，但n过大不稳定
+        # multi-Step Learning 一次性加上后面n步的实际报酬 在加上n+1目标网络的q值，
         # multi_steps适合再训练初期网络与实际偏差较大的情况下使用
-        # 考虑multi_steps = 1的情况加大训练量，值是否也与加大multi_steps的情况一样
+        # 这样能加速训练，但会导致网络无法找到稳定的获利策略，训练一段时间后应该将multi_steps改成1
 
-        multi_steps = 15
-        next_reward = reward.copy()
         # 将1到multi_steps个步骤的r，乘以衰减后相加
         # 这里原本有一个所以只需要做multi_steps - 1 次
-        for i in range(multi_steps - 1):
+        next_reward = reward.copy()
+        for i in range(self.multi_steps - 1):
             next_reward = np.roll(next_reward, -1)
             # 从下一个round往上移动的，reward为0
             next_reward[time > 0] = 0
             reward += next_reward * self.reward_decay ** (i + 1)
 
         # 加上target model第multi_steps+1个步骤的Q值
-        for i in range(multi_steps):
+        for i in range(self.multi_steps):
             next_q = np.roll(next_q, -1)
             # 从下一个round往上移动的，reward为0
             next_q[time > 0] = 0
-        reward += next_q * self.reward_decay ** multi_steps
+        reward += next_q * self.reward_decay ** self.multi_steps
 
         td_error = reward - predict_model_prediction[range(len(train_index)), action]
         td_error = td_error.values
@@ -148,18 +104,9 @@ class DoubleDQN(KofAgent):
         predict_model_prediction[range(len(train_index)), action] = reward
 
         # 上下限裁剪，防止过估计
-        predict_model_prediction[predict_model_prediction > 3] = 3
-        predict_model_prediction[predict_model_prediction < -3] = -3
+        predict_model_prediction[predict_model_prediction > 2] = 2
+        predict_model_prediction[predict_model_prediction < -2] = -2
         return [predict_model_prediction, td_error, [pre_actions, action.values]]
-
-    def raw_env_data_to_input(self, raw_data, action):
-        # 这里energy改成一个只输入最后一个,这里输出的形状应该就是1，貌似在keras中也能正常运作
-        return [raw_data[:, :, 0], raw_data[:, :, 1], raw_data[:, :, 2], raw_data[:, :, 3],
-                raw_data[:, :, 4:6], raw_data[:, :, 6:8], raw_data[:, :, 8]]
-
-    # 这里返回的list要和raw_env_data_to_input返回的大小一样
-    def empty_env(self):
-        return [[], [], [], [], [], [], []]
 
     def weight_copy(self):
         self.target_model.set_weights(self.predict_model.get_weights())
@@ -199,115 +146,18 @@ class DuelingDQN(DoubleDQN):
         super().__init__(role=role, model_name=model_name)
 
     def build_model(self):
-        role1_actions = Input(shape=(self.input_steps,), name='role1_actions')
-        role2_actions = Input(shape=(self.input_steps,), name='role2_actions')
-        role1_actions_embedding = layers.Embedding(512, 8, name='role1_actions_embedding')(role1_actions)
-        role2_actions_embedding = layers.Embedding(512, 8, name='role2_actions_embedding')(role2_actions)
-
-        role1_energy = Input(shape=(self.input_steps,), name='role1_energy')
-        role1_energy_embedding = layers.Embedding(5, 2, name='role1_energy_embedding')(role1_energy)
-        role2_energy = Input(shape=(self.input_steps,), name='role2_energy')
-        role2_energy_embedding = layers.Embedding(5, 2, name='role2_energy_embedding')(role2_energy)
-
-        role2_baoqi = Input(shape=(self.input_steps,), name='role2_baoqi')
-        role2_baoqi_embedding = layers.Embedding(2, 2, name='role2_baoqi_embedding')(role2_baoqi)
-
-        role1_x_y = Input(shape=(self.input_steps, 2), name='role1_x_y')
-        role2_x_y = Input(shape=(self.input_steps, 2), name='role2_x_y')
-
-        role_position = concatenate([role1_x_y, role2_x_y])
-        conv_position = layers.SeparableConv1D(8, 1, padding='same', strides=1, kernel_initializer='he_uniform')(
-            role_position)
-        conv_position = BatchNormalization()(conv_position)
-        conv_position = layers.LeakyReLU(0.05)(conv_position)
-
-        role_distance = layers.Subtract()([role1_x_y, role2_x_y])
-        conv_distance = layers.SeparableConv1D(4, 2, padding='same', strides=1, kernel_initializer='he_uniform')(
-            role_distance)
-        conv_distance = BatchNormalization()(conv_distance)
-
-        concatenate_status = concatenate(
-            [role1_actions_embedding, conv_distance, conv_position, role1_energy_embedding,
-             role2_actions_embedding, role2_energy_embedding, role2_baoqi_embedding])
-
-        lstm_status = CuDNNLSTM(512)(concatenate_status)
-
-        t_status = layers.Dense(512, kernel_initializer='he_uniform')(lstm_status)
-        t_status = layers.LeakyReLU(0.05)(t_status)
+        shared_model = self.build_shared_model()
+        t_status = shared_model.output
 
         # 攻击动作，则采用基础标量 + 均值为0的向量策略
         value = layers.Dense(1)(t_status)
-        value = concatenate([value] * self.action_num)
+        # 这力可以直接广播，不需要拼接
+        # value = concatenate([value] * self.action_num)
         a = layers.Dense(self.action_num)(t_status)
         mean = layers.Lambda(lambda x: K.mean(x, axis=1, keepdims=True))(a)
         advantage = layers.Subtract()([a, mean])
         q = layers.Add()([value, advantage])
-        model = Model([role1_actions, role2_actions, role1_energy, role2_energy, role1_x_y, role2_x_y,
-                       role2_baoqi], q)
-
-        model.compile(optimizer=Adam(lr=0.00001), loss='mse')
-
-        return model
-
-
-# 两个角色分开做lstm
-class DuelingDQN_2(DoubleDQN):
-
-    def __init__(self, role, model_name='dueling_dqn_2'):
-        super().__init__(role=role, model_name=model_name)
-
-    def build_model(self):
-        role1_actions = Input(shape=(self.input_steps,), name='role1_actions')
-        role2_actions = Input(shape=(self.input_steps,), name='role2_actions')
-        role1_actions_embedding = layers.Embedding(512, 8, name='role1_actions_embedding')(role1_actions)
-        role2_actions_embedding = layers.Embedding(512, 8, name='role2_actions_embedding')(role2_actions)
-
-        role1_energy = Input(shape=(self.input_steps,), name='role1_energy')
-        role1_energy_embedding = layers.Embedding(5, 2, name='role1_energy_embedding')(role1_energy)
-        role2_energy = Input(shape=(self.input_steps,), name='role2_energy')
-        role2_energy_embedding = layers.Embedding(5, 2, name='role2_energy_embedding')(role2_energy)
-
-        # 爆气状态
-        role2_baoqi = Input(shape=(self.input_steps,), name='role2_baoqi')
-        role2_baoqi_embedding = layers.Embedding(2, 2, name='role2_baoqi_embedding')(role2_baoqi)
-
-        role1_x_y = Input(shape=(self.input_steps, 2), name='role1_x_y')
-        role2_x_y = Input(shape=(self.input_steps, 2), name='role2_x_y')
-
-        role_position = concatenate([role1_x_y, role2_x_y])
-        conv_position = layers.SeparableConv1D(8, 1, padding='same', strides=1, kernel_initializer='he_uniform')(
-            role_position)
-        conv_position = BatchNormalization()(conv_position)
-        conv_position = layers.LeakyReLU(0.05)(conv_position)
-
-        role_distance = layers.Subtract()([role1_x_y, role2_x_y])
-        conv_distance = layers.SeparableConv1D(4, 2, padding='same', strides=1, kernel_initializer='he_uniform')(
-            role_distance)
-        conv_distance = BatchNormalization()(conv_distance)
-
-        lstm_role1_status = CuDNNLSTM(256)(
-            concatenate([role1_actions_embedding, conv_position, conv_distance, role1_energy_embedding]))
-        lstm_role2_status = CuDNNLSTM(256)(
-            concatenate(
-                [role2_actions_embedding, conv_position, conv_distance, role2_energy_embedding, role2_baoqi_embedding]))
-        # lstm_position = CuDNNLSTM(128)(position)
-
-        concatenated_status = concatenate(
-            [lstm_role1_status, lstm_role2_status])
-
-        t_status = layers.Dense(512, kernel_initializer='he_uniform')(concatenated_status)
-        t_status = layers.LeakyReLU(0.05)(t_status)
-
-        value = layers.Dense(1)(t_status)
-        value = concatenate([value] * self.action_num)
-        a = layers.Dense(self.action_num)(t_status)
-        mean = layers.Lambda(lambda x: K.mean(x, axis=1, keepdims=True))(a)
-        advantage = layers.Subtract()([a, mean])
-        q = layers.Add()([value, advantage])
-        model = Model(
-            [role1_actions, role2_actions, role1_energy, role2_energy, role1_x_y, role2_x_y,
-             role2_baoqi],
-            q)
+        model = Model(shared_model.input, q)
 
         model.compile(optimizer=Adam(lr=0.00001), loss='mse')
 
@@ -317,26 +167,23 @@ class DuelingDQN_2(DoubleDQN):
 def train_model(model, folders, rounds):
     print('-----------------------------')
     print('train ', model.model_name)
-    count = 0
+    # 在刚开始训练网络的时候使用
+    # model.multi_steps = 10
     for i in folders:
         try:
-            for r in rounds:
-                print('train ', i)
-                # model.train_model(i, [r])
-                model.train_model_with_sum_tree(i, [r], epochs=30)
-                # 这种直接拷贝的效果和nature DQN其实没有区别。。所以放到外层去拷贝，训练时应该加大拷贝的间隔
-                # model.weight_copy()
-                count += 1
+            print('train ', i)
+            # model.train_model(i)
+            model.train_model_with_sum_tree(i, epochs=25)
+            # 这种直接拷贝的效果和nature DQN其实没有区别。。所以放到外层去拷贝，训练时应该加大拷贝的间隔
+            # model.weight_copy()
         except:
             traceback.print_exc()
-        if count >= 8:
-            # 两个文件的数据更新一次target
-            model.save_model()
-            count = 0
+    if i % 4 == 0:
+        model.save_model()
 
 
 if __name__ == '__main__':
-    # models = [DuelingDQN('iori'), DoubleDQN('iori'), DuelingDQN_2('iori')]
+    # models = [DuelingDQN('iori'), DoubleDQN('iori')]
     model = DuelingDQN('iori')
 
     # model.model_test(1, [1,2])
@@ -345,15 +192,17 @@ if __name__ == '__main__':
     # t = model.operation_analysis(5)
     '''
     for model in models:
-        train_model(model, list(range(1, 20)), list((range(1, 7))))
-
-    for model in models:
-        model.value_test(11, [1])
+        train_model(model, list(range(9, 24)), list((range(1, 7))))
     '''
-    raw_env = model.raw_data_generate(20, [12])
+    '''
+    for model in models:
+        model.value_test(1, [1])
+    '''
+    raw_env = model.raw_data_generate(1, [1])
     train_env, train_index = model.train_env_generate(raw_env)
     train_reward, td_error, n_action = model.double_dqn_train_data(raw_env, train_env, train_index)
+    # 这里100 对应的是 raw_env 中 100+input_steps左右位置
     t = model.predict_model.predict([np.expand_dims(env[100], 0) for env in train_env])
     # output = model.output_test([ev[50].reshape(1, *ev[50].shape) for ev in train_env])
     # train_reward[range(len(n_action[1])), n_action[1]]
-    model.model_test(20, [12])
+    model.model_test(1, [1])

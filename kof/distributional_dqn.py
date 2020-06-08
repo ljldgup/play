@@ -3,11 +3,9 @@ import random
 import traceback
 
 import numpy as np
-from tensorflow.keras import backend as K
 from tensorflow.keras import layers
 from tensorflow.python.keras import Input, Model
 from tensorflow.python.keras.layers import concatenate, BatchNormalization, CuDNNLSTM
-from tensorflow.python.keras.losses import categorical_crossentropy
 from tensorflow.python.keras.optimizers import Adam
 
 from kof.value_based_models import DoubleDQN
@@ -15,18 +13,16 @@ from kof.value_based_models import DoubleDQN
 data_dir = os.getcwd()
 
 
-# 注意应为输出是sample*action*N,貌似keras自己交叉熵损失函数计算有问题
-# 所以自己定义一个，压平以后再算交叉熵
-
+# 这个模型训练的非常慢
 class DistributionalDQN(DoubleDQN):
     def __init__(self, role, reward_decay=0.96):
         # 这里的N必须是能得到有限小数分割区间大小的值，不然后面概率重置会出错
-        self.N = 21
+        self.N = 41
         super().__init__(role=role, model_name='distributional', reward_decay=reward_decay)
 
         # reward分布的值，用来乘以网络输出，得到reward期望
-        self.vmax = 4
-        self.vmin = -4
+        self.vmax = 2
+        self.vmin = -2
         self.rewards_values = np.linspace(self.vmin, self.vmax, self.N)
         self.rewards_distribution = np.array([[self.rewards_values] * self.action_num])
         self.train_reward_generate = self.distributional_dqn_train_data
@@ -41,72 +37,24 @@ class DistributionalDQN(DoubleDQN):
             return (ans * self.rewards_distribution).sum(axis=2).argmax()
 
     def build_model(self):
-        role1_actions = Input(shape=(self.input_steps,), name='role1_actions')
-        role2_actions = Input(shape=(self.input_steps,), name='role2_actions')
-        role1_actions_embedding = layers.Embedding(512, 8, name='role1_actions_embedding')(role1_actions)
-        role2_actions_embedding = layers.Embedding(512, 8, name='role2_actions_embedding')(role2_actions)
-
-        role1_energy = Input(shape=(self.input_steps,), name='role1_energy')
-        role1_energy_embedding = layers.Embedding(5, 2, name='role1_energy_embedding')(role1_energy)
-        role2_energy = Input(shape=(self.input_steps,), name='role2_energy')
-        role2_energy_embedding = layers.Embedding(5, 2, name='role2_energy_embedding')(role2_energy)
-
-        # 爆气状态
-        role2_baoqi = Input(shape=(self.input_steps,), name='role2_baoqi')
-        role2_baoqi_embedding = layers.Embedding(2, 2, name='role2_baoqi_embedding')(role2_baoqi)
-
-        role1_x_y = Input(shape=(self.input_steps, 2), name='role1_x_y')
-        role2_x_y = Input(shape=(self.input_steps, 2), name='role2_x_y')
-
-        role_position = concatenate([role1_x_y, role2_x_y])
-        conv_position = layers.SeparableConv1D(8, 1, padding='same', strides=1, kernel_initializer='he_uniform')(
-            role_position)
-        conv_position = BatchNormalization()(conv_position)
-        conv_position = layers.LeakyReLU(0.05)(conv_position)
-
-        role_distance = layers.Subtract()([role1_x_y, role2_x_y])
-        role_distance = BatchNormalization()(role_distance)
-
-        concatenate_status = concatenate(
-            [role1_actions_embedding, role_distance, conv_position, role1_energy_embedding,
-             role2_actions_embedding, role2_energy_embedding, role2_baoqi_embedding])
-
-        lstm_status = CuDNNLSTM(512)(concatenate_status)
-        # bn层通常加在线性输出(cnn,fc)后面，应为线性输出分布均衡，加在rnn后面效果很差
-        # t_status = BatchNormalization()(lstm_status)
-        # 加了一层fc效果好了很多，直接加载rnn上训练效果很一般
-        t_status = layers.Dense(512, kernel_initializer='he_uniform')(lstm_status)
-        t_status = BatchNormalization()(t_status)
-        t_status = layers.LeakyReLU(0.05)(t_status)
+        shared_model = self.build_shared_model()
+        t_status = shared_model.output
         probability_distribution_layers = []
         for a in range(self.action_num):
             t_layer = layers.Dense(128, kernel_initializer='he_uniform')(t_status)
-            t_layer = BatchNormalization()(t_layer)
             t_layer = layers.LeakyReLU(0.05)(t_layer)
-            t_layer = layers.Dense(self.N, kernel_initializer='he_uniform',
-                                   name='action_{}_distribution'.format(a))(t_layer)
             # 注意这里softmax 不用he_uniform初始化
-            t_layer = layers.Softmax()(t_layer)
+            t_layer = layers.Dense(self.N, activation='softmax',
+                                   name='action_{}_distribution'.format(a))(t_layer)
             probability_distribution_layers.append(t_layer)
         probability_output = concatenate(probability_distribution_layers, axis=1)
         probability_output = layers.Reshape((self.action_num, self.N))(probability_output)
 
-        model = Model(
-            [role1_actions, role2_actions, role1_energy, role2_energy, role1_x_y, role2_x_y,
-             role2_baoqi],
-            probability_output)
-
+        model = Model(shared_model.input, probability_output)
         model.compile(optimizer=Adam(), loss='categorical_crossentropy')
         # model.compile(optimizer=Adam(lr=0.00001), loss='mse')
 
         return model
-
-    def raw_env_data_to_input(self, raw_data, action):
-        return [raw_data[:, :, 0], raw_data[:, :, 1], raw_data[:, :, 2], raw_data[:, :, 3],
-                raw_data[:, :, 4:6], raw_data[:, :, 6:8], raw_data[:, :, 8]]
-
-    def empty_env(self):
-        return [[], [], [], [], [], [], []]
 
     def distributional_dqn_train_data(self, raw_env, train_env, train_index):
         reward = raw_env['reward'].reindex(train_index)
@@ -143,7 +91,12 @@ class DistributionalDQN(DoubleDQN):
         td_error = td_error.sum(axis=1)
 
         predict_model_prediction[range(len(train_index)), action] = new_distribution
-
+        '''
+        # 这里因为原来的网络训练不动，可能是其他无关分布限制，这里将其他分布置0，使其在loss中占比为0
+        # 效果也很一般
+        reward_distribution = np.zeros(shape=predict_model_prediction.shape)
+        reward_distribution[range(len(train_index)), action] = new_distribution
+        '''
         return [predict_model_prediction, td_error, [pre_actions, action.values]]
 
     # 将分布移到采样点上
@@ -197,10 +150,11 @@ class DistributionalDQN(DoubleDQN):
 if __name__ == '__main__':
     model = DistributionalDQN('iori')
     '''
-    for i in range(1, 3):
+    for i in range(1):
         try:
             print('train ', i)
-            for num in range(1, 3):
+            for num in range(1, 2):
+                # softmax训练很慢，要多几个epochs
                 model.train_model_with_sum_tree(i, [num], epochs=80)
                 # model.train_model(i, [num], epochs=80)
         except:
@@ -208,9 +162,9 @@ if __name__ == '__main__':
             traceback.print_exc()
         model.save_model()
 
-    '''
 
     raw_env = model.raw_data_generate(1, [1])
     train_env, train_index = model.train_env_generate(raw_env)
     train_distribution, td_error, n_action = model.distributional_dqn_train_data(raw_env, train_env, train_index)
-    # t = model.predict_model.predict([np.expand_dims(env[100], 0) for env in train_env])
+    t = model.predict_model.predict([np.expand_dims(env[100], 0) for env in train_env])
+    '''

@@ -8,8 +8,9 @@ from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 
 from kof.distributional_dqn import DistributionalDQN
+from kof.kof_agent import RandomAgent
 from kof.policy_based_model import ActorCritic
-from kof.value_based_models import DoubleDQN, DuelingDQN, DuelingDQN_2
+from kof.value_based_models import DoubleDQN, DuelingDQN
 from kof.kof_command_mame import operation, restart, simulate
 
 '''
@@ -19,16 +20,22 @@ autoboot_script 设置为kof.lua脚本输出对应的内存值
 mame_dir = 'D:/game/mame32/'
 
 
+def raise_expection(thread):
+    e = thread.exception()
+    if e:
+        raise e
+
+
 def train_on_mame(model, train=True, round_num=12):
-    executor = ThreadPoolExecutor(2)
+    executor = ThreadPoolExecutor(6)
     # 每次打完训练次数
-    epochs = 40
+    epochs = 60
 
     # 存放数据路径
     folder_num = 1
 
-    # 训练间隔
-    train_interval = 8
+    # weight_copy间隔
+    copy_interval = 6
 
     while os.path.exists(str(folder_num)):
         folder_num += 1
@@ -71,24 +78,23 @@ def train_on_mame(model, train=True, round_num=12):
 
                             # model.model_test(folder_num, [count])
                             if train:
-                                # 加个间隔，打train_interval局训练一次
-
-                                for i in range(2):
-                                    model.train_model_with_sum_tree(folder_num, [count], epochs=epochs)
-                                # 注意这里train_interval设置成1的话那么，每次训练实际上两个模型是一样的，就是nature dqn
-                                if count % train_interval == 0:
-                                    model.save_model()
+                                model.train_model_with_sum_tree(folder_num, [count], epochs=epochs)
 
                     tmp_action = []
                     tmp_env = []
-                    count += 1
 
+                    # 注意这里train_interval设置成1的话那么，每次训练实际上两个模型是一样的，就是nature dqn
+                    count += 1
+                    if train and count % copy_interval == 0:
+                        model.save_model()
                     print("重开")
-                    # 这里需要在第一局之前设置
-                    # 采用双曲线逼近1，起初greedy很小，但前期变化快，之后缓慢向常数项
+
                     if train:
-                        model.e_greedy = 0.6 * count / round_num + 0.6
-                    print('greedy:', model.e_greedy)
+                        # multi_steps 逐渐较少到1，起一定的修正效果， e_greedy增大至1
+                        # model.multi_steps = 4 // count + 1
+                        model.e_greedy = -1 / (count + 1) + 1.1
+                        # model.e_greedy = 0.6 * count / round_num + 0.6
+                        print('greedy:', model.e_greedy)
 
                     time.sleep(4)
                     # 重启，role用来选人
@@ -113,20 +119,15 @@ def train_on_mame(model, train=True, round_num=12):
                     simulate(keys)
                     '''
                     if data[4] > data[6]:
-                        # t = executor.submit(operation, keys, True)
-                        executor.submit(operation, keys, True)
+                        t = executor.submit(operation, keys, True)
+                        # executor.submit(operation, keys, True)
                     else:
-                        # t = executor.submit(operation, keys)
-                        executor.submit(operation, keys)
-
+                        t = executor.submit(operation, keys)
+                        # executor.submit(operation, keys)
+                    executor.submit(raise_expection, t)
                     '''
                     # 如果线程按钮不能正常工作，使用此段
                     # 捕获executor返回的异常，t为submit返回的值
-
-                    e = t.exception()
-                    if e:
-                        raise e
-
                     '''
 
     except:
@@ -140,17 +141,16 @@ def train_on_mame(model, train=True, round_num=12):
 
 
 if __name__ == '__main__':
-    # dqn_model = ActorCritic('iori')
-    # dqn_model = DistributionalDQN('iori')
     # dqn_model = DoubleDQN('iori')
-    dqn_model = DuelingDQN_2('iori')
+    # dqn_model = DuelingDQN_2('iori')
     # dqn_model = DuelingDQN('iori')
-    # dqn_model = random_mojdel('iori')
+    dqn_model = RandomAgent('iori')
     # model.load_model('1233')
     # model = random_model('kyo')
-    folder_num = train_on_mame(dqn_model, True)
+    folder_num = train_on_mame(dqn_model, False)
     # dqn_model.train_model(folder_num, epochs=20)
     dqn_model.save_model()
 
     dqn_model.operation_analysis(folder_num)
     dqn_model.value_test(folder_num, [1])
+    dqn_model.model_test(folder_num, [1])
