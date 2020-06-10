@@ -1,6 +1,7 @@
 import os
 import random
 import numpy as np
+from tensorflow.python.training.adam import AdamOptimizer
 
 from kof.kof_agent import KofAgent
 from tensorflow.keras import layers
@@ -9,29 +10,53 @@ from tensorflow.python.keras.layers import concatenate, BatchNormalization, CuDN
 from tensorflow.python.keras.optimizers import Adam
 from tensorflow.keras import losses
 from tensorflow.keras import backend as K
+import tensorflow as tf
 
+from kof.sumtree import SumTree
 from kof.value_based_models import DuelingDQN, DoubleDQN
 
+tf.compat.v1.disable_eager_execution()
 data_dir = os.getcwd()
+epsilon = 0.1
 
 
-def PPO_loss(y_true, y_pred):
-    # ratio = y_pred / y_true[:, 1]
-    # return K.min(losses.categorical_crossentropy(ratio * y_true[:, 0], y_pred),
-    #            losses.categorical_crossentropy(K.clip(ratio, 0.9, 1.1) * y_true[:, 0], y_pred))
-    return losses.categorical_crossentropy(y_true * y_pred, y_pred)
+def ppo_loss(y_true, y_pred):
+    r = y_true[:, 0]
+    p_old = y_true[:, 1]
+    p_new = y_pred
+    ration = p_new / p_old
+    adv = r * K.log(p_new)
+    loss = K.mean(K.minimum(ration * adv,
+                            K.clip(ration, 1. - epsilon, 1. + epsilon) * adv))
+    return loss
 
 
-def DDPG_loss(y_true, y_pred):
-    return -K.mean(y_true)
+class PPO_Loss(layers.Layer):
+    def __init__(self, **kwargs):
+        super(PPO_Loss, self).__init__(**kwargs)
+
+    def call(self, inputs, **kwargs):
+        """
+        Layer的call方法明确要求inputs为一个tensor，或者包含多个tensor的列表/元组
+        所以这里不能直接接受多个入参，需要把多个入参封装成列表/元组的形式然后在函数中自行解包，否则会报错。
+        """
+        # 解包入参
+        r, p_old, p_new = inputs
+        # 复杂的损失函数
+        ration = p_new / p_old
+        adv = r * K.log(p_new)
+        loss = K.mean(K.minimum(ration * adv,
+                                K.clip(ration, 1. - epsilon, 1. + epsilon) * adv))
+        self.add_loss(loss, inputs=inputs)
+        return loss
 
 
 class ActorCritic(DoubleDQN):
 
-    def __init__(self, role, model_name='Actor'):
+    def __init__(self, role, model_name='AC_actor'):
         self.critic = Critic(role, model_name=model_name + "_critic")
-        self.train_reward_generate = self.actor_tarin_data
         super().__init__(role=role, model_name=model_name)
+        self.train_reward_generate = self.actor_tarin_data
         self.actor = self.predict_model
 
     def choose_action(self, raw_data, action, random_choose=False):
@@ -44,13 +69,12 @@ class ActorCritic(DoubleDQN):
         shared_model = self.build_shared_model()
         t_status = shared_model.output
         output = layers.Dense(self.action_num, activation='softmax')(t_status)
-        model = Model(shared_model.input, output)
+        model = Model(shared_model.input, output, name=self.model_name)
         model.compile(optimizer=Adam(lr=0.00001), loss=losses.categorical_crossentropy)
         return model
 
     def actor_tarin_data(self, raw_env, train_env, train_index):
         _, td_error, action = self.critic.train_reward_generate(raw_env, train_env, train_index)
-
         # 构造onehot，将1改为td_error,
         # 使用mean(td_error * (log(action_prob)))，作为损失用于训练
         action_onehot = np.zeros(shape=(len(action[1]), self.action_num))
@@ -60,15 +84,16 @@ class ActorCritic(DoubleDQN):
     def train_model_with_sum_tree(self, folder, round_nums=[], batch_size=64, epochs=30):
         # 先使用critic的td_error交叉熵训练actor，再训练critic
         # 注意这里由于PG算法限制，数据只能用一次。。。用完概率分布就改变了，公式就不满足了，PPO对此作了改进
-        print('train_actor')
+        print(self.model_name)
         # KofAgent.train_model_with_sum_tree(self, folder, round_nums=round_nums, batch_size=batch_size, epochs=1)
-        KofAgent.train_model_with_sum_tree(self, folder, round_nums=round_nums, batch_size=batch_size, epochs=epochs)
+        KofAgent.train_model_with_sum_tree(self, folder, round_nums=round_nums, batch_size=batch_size,
+                                           epochs=epochs)
 
         print('train_critic')
         self.critic.train_model_with_sum_tree(folder, round_nums=round_nums, batch_size=batch_size, epochs=epochs)
 
     def save_model(self):
-        self.save_model(self)
+        DoubleDQN.save_model(self)
         self.critic.save_model()
 
     def weight_copy(self):
@@ -81,15 +106,79 @@ class PPO(ActorCritic):
     def __init__(self, role, model_name='PPO_actor'):
         ActorCritic.__init__(self, role=role, model_name=model_name)
 
+        # 用于训练的模型
+        self.trained_model = self.build_train_model()
+        self.trained_model.set_weights(self.predict_model.get_weights())
+
+    def build_model(self):
+        shared_model = self.build_shared_model()
+        t_status = shared_model.output
+        output = layers.Dense(self.action_num, activation='softmax')(t_status)
+        model = Model(shared_model.input, output, name=self.model_name)
+        # 这里的优化器，损失都没用
+        model.compile(optimizer=Adam(lr=0.00001), loss='mse')
+        return model
+
+    def build_train_model(self):
+        shared_model = self.build_shared_model()
+        t_status = shared_model.output
+        output = layers.Dense(self.action_num, activation='softmax')(t_status)
+
+        r = Input(shape=(self.action_num,), name='r')
+        old_prob = Input(shape=(self.action_num,), name='old_prob')
+
+        loss = PPO_Loss()([r, old_prob, output])
+        input = shared_model.input + [r, old_prob]
+        model = Model(input, loss, name=self.model_name)
+        model.compile(optimizer=Adam(lr=0.00001), loss=None)
+        return model
+
     def actor_tarin_data(self, raw_env, train_env, train_index):
+
         _, td_error, action = self.critic.train_reward_generate(raw_env, train_env, train_index)
         # PPO用到运行时的分布
-        old_prob = self.target_model.predict(train_env)[range(len(action[1])), action[1]]
-        action_onehot = np.zeros(shape=(len(action[1]), self.action_num))
+        old_prob = self.target_model.predict(train_env)
+        reward_onehot = np.zeros(shape=(len(action[1]), self.action_num))
+        reward_onehot[range(len(action[1])), action[1]] = td_error
+        return [[reward_onehot, old_prob], td_error, action]
 
-        # 直接将A处以采样的概率分布，keras太复杂的实现起来比较麻烦
-        action_onehot[range(len(action[1])), action[1]] = td_error / old_prob
-        return action_onehot, td_error, action
+    def train_model_with_sum_tree(self, folder, round_nums=[], batch_size=64, epochs=30):
+        # 先使用critic的td_error交叉熵训练actor，再训练critic
+        # 注意这里由于PG算法限制，数据只能用一次。。。用完概率分布就改变了，公式就不满足了，PPO对此作了改进
+        print(self.model_name)
+        # KofAgent.train_model_with_sum_tree(self, folder, round_nums=round_nums, batch_size=batch_size, epochs=1)
+        if not round_nums:
+            files = os.listdir('{}/{}'.format(data_dir, folder))
+            data_files = filter(lambda f: '.' in f, files)
+            round_nums = list(set([file.split('.')[0] for file in data_files]))
+
+        raw_env = self.raw_data_generate(folder, round_nums)
+        train_env, train_index = self.train_env_generate(raw_env)
+        train_target, td_error, action = self.train_reward_generate(raw_env, train_env, train_index)
+
+        # PPO的损失比较复杂放在最后一个损失层来实现，reward等一起作为输入
+        train_env += train_target
+
+        sum_tree = SumTree(abs(td_error))
+
+        loss_history = []
+        print('train {}/{} {} epochs'.format(folder, round_nums, epochs))
+        for e in range(epochs):
+            loss = 0
+            for i in range(len(train_index) // batch_size):
+                index = sum_tree.gen_batch_index(batch_size)
+                # train_model loss层没有y
+                loss += self.trained_model.train_on_batch([env[index] for env in train_env])
+            loss_history.append(loss)
+        for loss in loss_history:
+            # 根据标准公式，这里需要求个均值
+            print(loss / (len(train_index) // batch_size))
+        self.record['total_epochs'] += epochs
+
+        self.predict_model.set_weights(self.trained_model.get_weights())
+
+        # print('train_critic')
+        # self.critic.train_model_with_sum_tree(folder, round_nums=round_nums, batch_size=batch_size, epochs=epochs)
 
 
 class DDPG(ActorCritic):
@@ -101,8 +190,9 @@ class DDPG(ActorCritic):
         shared_model = self.build_shared_model()
         t_status = shared_model.output
         output = layers.Dense(self.action_num)(t_status)
-        model = Model(shared_model.input, output)
-        model.compile(optimizer=Adam(lr=0.00001), loss=PPO_loss)
+        model = Model(shared_model.input, output, name=self.model_name)
+        # 这里的优化器，损失没有用
+        model.compile(optimizer=Adam(lr=0.00001), loss='mse')
         return model
 
     def actor_tarin_data(self, raw_env, train_env, train_index):
@@ -113,7 +203,7 @@ class DDPG(ActorCritic):
 
         # 直接将A处以采样的概率分布，keras太复杂的实现起来比较麻烦
         action_onehot[range(len(action[1])), action[1]] = td_error / old_prob
-        return [-action_onehot, td_error, action]
+        return [action_onehot, td_error, action]
 
     def weight_copy(self):
         """soft update target model.
@@ -184,11 +274,13 @@ class Critic(DoubleDQN):
 
 
 if __name__ == '__main__':
-    # model1 = ActorCritic('iori')
+    model1 = ActorCritic('iori')
     # model2 = Critic('iori')
+
     model2 = PPO('iori')
-    model3 = DDPG('iori')
-    # model3.train_model_with_sum_tree(0, [0], epochs=40)
+    # model3 = DDPG('iori')
+
+    model2.train_model_with_sum_tree(0, [1], epochs=40)
     '''
     for i in range(1, 10):
         try:
@@ -201,11 +293,12 @@ if __name__ == '__main__':
             # print('no data in ', i)
             traceback.print_exc()
     model.save_model()
+    '''
 
-
-
-    raw_env = model.raw_data_generate(1, [1])
-    train_env, train_index = model.train_env_generate(raw_env)
-    train_distribution, td_error, n_action = model.actor_tarin_data(raw_env, train_env, train_index)
-    # t = model.predict_model.predict([np.expand_dims(env[100], 0) for env in train_env])
+    '''
+    raw_env = model2.raw_data_generate(0, [1])
+    train_env, train_index = model2.train_env_generate(raw_env)
+    train_distribution, td_error, n_action = model2.actor_tarin_data(raw_env, train_env, train_index)
+    t = model2.predict_model.predict([np.expand_dims(env[100], 0) for env in train_env])
+    t = model2.predict_model.predict(train_env)
     '''
