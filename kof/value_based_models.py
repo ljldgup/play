@@ -1,13 +1,11 @@
 import os
-import random
 import traceback
 import numpy as np
 from tensorflow.keras import backend as K
 from matplotlib import pyplot as plt
 from kof.kof_agent import KofAgent
 from tensorflow.keras import layers
-from tensorflow.python.keras import Input, Model
-from tensorflow.python.keras.layers import concatenate, BatchNormalization, CuDNNGRU, CuDNNLSTM
+from tensorflow.python.keras import Model
 from tensorflow.python.keras.optimizers import Adam
 
 '''
@@ -48,7 +46,7 @@ class DoubleDQN(KofAgent):
         shared_model = self.build_shared_model()
         t_status = shared_model.output
         output = layers.Dense(self.action_num, kernel_initializer='he_uniform')(t_status)
-        model = Model(shared_model.input, output)
+        model = Model(shared_model.input, output, name=self.model_name)
 
         model.compile(optimizer=Adam(lr=0.00001), loss='mse')
 
@@ -157,7 +155,7 @@ class DuelingDQN(DoubleDQN):
         mean = layers.Lambda(lambda x: K.mean(x, axis=1, keepdims=True))(a)
         advantage = layers.Subtract()([a, mean])
         q = layers.Add()([value, advantage])
-        model = Model(shared_model.input, q)
+        model = Model(shared_model.input, q, name=self.model_name)
 
         model.compile(optimizer=Adam(lr=0.00001), loss='mse')
 

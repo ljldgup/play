@@ -9,7 +9,7 @@ import numpy as np
 
 from kof.distributional_dqn import DistributionalDQN
 from kof.kof_agent import RandomAgent
-from kof.policy_based_model import ActorCritic
+from kof.policy_based_model import ActorCritic, PPO, DDPG
 from kof.value_based_models import DoubleDQN, DuelingDQN
 from kof.kof_command_mame import operation, restart, simulate
 
@@ -34,8 +34,6 @@ def train_on_mame(model, train=True, round_num=12):
     # 存放数据路径
     folder_num = 1
 
-    # weight_copy间隔
-    copy_interval = 6
 
     while os.path.exists(str(folder_num)):
         folder_num += 1
@@ -85,7 +83,7 @@ def train_on_mame(model, train=True, round_num=12):
 
                     # 注意这里train_interval设置成1的话那么，每次训练实际上两个模型是一样的，就是nature dqn
                     count += 1
-                    if train and count % copy_interval == 0:
+                    if train and count % model.copy_interval == 0:
                         model.save_model()
                     print("重开")
 
@@ -142,12 +140,13 @@ def train_on_mame(model, train=True, round_num=12):
 
 if __name__ == '__main__':
     # dqn_model = DoubleDQN('iori')
-    # dqn_model = DuelingDQN_2('iori')
+    # dqn_model = PPO('iori')
+    dqn_model = DDPG('iori')
     # dqn_model = DuelingDQN('iori')
-    dqn_model = RandomAgent('iori')
+    # dqn_model = RandomAgent('iori')
     # model.load_model('1233')
     # model = random_model('kyo')
-    folder_num = train_on_mame(dqn_model, False)
+    folder_num = train_on_mame(dqn_model, True)
     # dqn_model.train_model(folder_num, epochs=20)
     dqn_model.save_model()
 

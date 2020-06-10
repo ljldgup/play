@@ -1,4 +1,3 @@
-import math
 import os
 import random
 import time
@@ -8,8 +7,7 @@ import numpy as np
 from tensorflow.keras import backend as K
 from tensorflow.keras import layers
 from tensorflow.python.keras import Input, Model
-from tensorflow.python.keras.layers import concatenate, BatchNormalization, CuDNNGRU, CuDNNLSTM
-from tensorflow.python.keras.optimizers import Adam
+from tensorflow.python.keras.layers import concatenate, BatchNormalization, CuDNNLSTM
 from kof.kof_command_mame import global_set, role_commands
 from kof.sumtree import SumTree
 
@@ -66,6 +64,8 @@ class KofAgent:
         self.action_num = len(role_commands[role])
         self.predict_model = self.build_model()
         self.record = self.get_record()
+        # 模型参数拷贝间隔
+        self.copy_interval = 6
         if os.path.exists('{}/model/{}_{}.index'.format(data_dir, self.role, self.model_name)):
             print('load model {}'.format(self.role))
             self.load_model()
@@ -84,7 +84,7 @@ class KofAgent:
                 raw_env = np.loadtxt('{}/{}/{}.env'.format(data_dir, folder, round_nums[0]))
                 raw_actions = np.loadtxt('{}/{}/{}.act'.format(data_dir, folder, round_nums[0]))
             else:
-                raise Exception('no file')
+                raise Exception('no {}/{}/{}.env'.format(data_dir, folder, round_nums[0]))
             for i in range(1, len(round_nums)):
                 if os.path.exists('{}/{}/{}.env'.format(data_dir, folder, round_nums[i])):
                     # print(i)
@@ -215,7 +215,7 @@ class KofAgent:
             loss_history.append(loss)
         for loss in loss_history:
             # 根据标准公式，这里需要求个均值
-            print(loss / (len(train_target) // batch_size))
+            print(loss / (len(train_index) // batch_size))
         self.record['total_epochs'] += epochs
 
     def save_model(self):

@@ -4,8 +4,8 @@ import traceback
 
 import numpy as np
 from tensorflow.keras import layers
-from tensorflow.python.keras import Input, Model
-from tensorflow.python.keras.layers import concatenate, BatchNormalization, CuDNNLSTM
+from tensorflow.python.keras import Model
+from tensorflow.python.keras.layers import concatenate
 from tensorflow.python.keras.optimizers import Adam
 
 from kof.value_based_models import DoubleDQN
@@ -50,7 +50,7 @@ class DistributionalDQN(DoubleDQN):
         probability_output = concatenate(probability_distribution_layers, axis=1)
         probability_output = layers.Reshape((self.action_num, self.N))(probability_output)
 
-        model = Model(shared_model.input, probability_output)
+        model = Model(shared_model.input, probability_output, name=self.model_name)
         model.compile(optimizer=Adam(), loss='categorical_crossentropy')
         # model.compile(optimizer=Adam(lr=0.00001), loss='mse')
 

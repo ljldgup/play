@@ -1,12 +1,11 @@
 import os
 import random
 import numpy as np
-from tensorflow.python.training.adam import AdamOptimizer
 
 from kof.kof_agent import KofAgent
 from tensorflow.keras import layers
 from tensorflow.python.keras import Input, Model
-from tensorflow.python.keras.layers import concatenate, BatchNormalization, CuDNNGRU, CuDNNLSTM
+from tensorflow.python.keras.layers import BatchNormalization
 from tensorflow.python.keras.optimizers import Adam
 from tensorflow.keras import losses
 from tensorflow.keras import backend as K
@@ -20,15 +19,9 @@ data_dir = os.getcwd()
 epsilon = 0.1
 
 
-def ppo_loss(y_true, y_pred):
-    r = y_true[:, 0]
-    p_old = y_true[:, 1]
-    p_new = y_pred
-    ration = p_new / p_old
-    adv = r * K.log(p_new)
-    loss = K.mean(K.minimum(ration * adv,
-                            K.clip(ration, 1. - epsilon, 1. + epsilon) * adv))
-    return loss
+def DDPG_loss(y_true, y_pred):
+    # DDPG返回的梯度应该是-R,这里通过相乘实现，不知道对不对
+    return -K.mean(y_true * y_pred)
 
 
 class PPO_Loss(layers.Layer):
@@ -103,12 +96,14 @@ class ActorCritic(DoubleDQN):
 
 # PPO也是预测概率，build model
 class PPO(ActorCritic):
+
     def __init__(self, role, model_name='PPO_actor'):
         ActorCritic.__init__(self, role=role, model_name=model_name)
 
         # 用于训练的模型
         self.trained_model = self.build_train_model()
         self.trained_model.set_weights(self.predict_model.get_weights())
+        self.copy_interval = 4
 
     def build_model(self):
         shared_model = self.build_shared_model()
@@ -174,17 +169,17 @@ class PPO(ActorCritic):
             # 根据标准公式，这里需要求个均值
             print(loss / (len(train_index) // batch_size))
         self.record['total_epochs'] += epochs
-
+        # PPO的参数每轮都需要更新一次，概率分布不能太远
         self.predict_model.set_weights(self.trained_model.get_weights())
-
-        # print('train_critic')
-        # self.critic.train_model_with_sum_tree(folder, round_nums=round_nums, batch_size=batch_size, epochs=epochs)
+        print('train_critic')
+        self.critic.train_model_with_sum_tree(folder, round_nums=round_nums, batch_size=batch_size, epochs=epochs)
 
 
 class DDPG(ActorCritic):
     def __init__(self, role, model_name='PPO_actor'):
         self.TAU = 0.2
         ActorCritic.__init__(self, role=role, model_name=model_name)
+        self.copy_interval = 1
 
     def build_model(self):
         shared_model = self.build_shared_model()
@@ -192,17 +187,16 @@ class DDPG(ActorCritic):
         output = layers.Dense(self.action_num)(t_status)
         model = Model(shared_model.input, output, name=self.model_name)
         # 这里的优化器，损失没有用
-        model.compile(optimizer=Adam(lr=0.00001), loss='mse')
+        model.compile(optimizer=Adam(lr=0.00001), loss=DDPG_loss)
         return model
 
     def actor_tarin_data(self, raw_env, train_env, train_index):
         _, td_error, action = self.critic.train_reward_generate(raw_env, train_env, train_index)
         # PPO用到运行时的分布
-        old_prob = self.target_model.predict(train_env)[range(len(action[1])), action[1]]
         action_onehot = np.zeros(shape=(len(action[1]), self.action_num))
 
         # 直接将A处以采样的概率分布，keras太复杂的实现起来比较麻烦
-        action_onehot[range(len(action[1])), action[1]] = td_error / old_prob
+        action_onehot[range(len(action[1])), action[1]] = td_error
         return [action_onehot, td_error, action]
 
     def weight_copy(self):
@@ -229,6 +223,8 @@ class Critic(DoubleDQN):
     def __init__(self, role, model_name='critic'):
         DoubleDQN.__init__(self, role=role, model_name=model_name)
         self.train_reward_generate = self.critic_dqn_train_data
+        # 这设置一个较大multi_steps值
+        self.multi_steps = 16
 
     def build_model(self):
         shared_model = self.build_shared_model()
@@ -277,10 +273,10 @@ if __name__ == '__main__':
     model1 = ActorCritic('iori')
     # model2 = Critic('iori')
 
-    model2 = PPO('iori')
-    # model3 = DDPG('iori')
+    # model2 = PPO('iori')
+    model3 = DDPG('iori')
 
-    model2.train_model_with_sum_tree(0, [1], epochs=40)
+    model3.train_model_with_sum_tree(0, [1], epochs=40)
     '''
     for i in range(1, 10):
         try:

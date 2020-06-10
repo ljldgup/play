@@ -30,9 +30,9 @@ role_commands['kyo'] = [
     ([4, 2], [0, 0]),
     # ab
     ([5], [5]),
-
     ([5], [6]),
     ([5], [0]),
+    ([9, 0], [0, 0]),
     ([2], [1]),
     ([2, 2], [0, 4]),
     ([5], [3]),
@@ -51,16 +51,17 @@ role_commands['iori'] = [
     # 蹲防
     ([4, 2], [0, 0]),
     # ab,cd
+    ([5], [0]),
     ([5], [5]),
     ([5], [6]),
-    ([5], [0]),
+    ([5], [7]),
     ([5], [3]),
     ([5], [4]),
-    ([2, 1, 4], [0, 0, 3]),
     ([6, 6], [1, 1]),
-    ([2, 4], [0, 1]),
-    ([2, 4], [0, 4]),
+    ([2, 2], [0, 1]),
+    ([2, 2], [0, 4]),
     ([2, 1, 4], [0, 0, 1]),
+    ([2, 1, 4], [0, 0, 3]),
     ([2, 3, 6], [0, 0, 3]),
     ([6, 2, 3], [0, 0, 1]),
     ([2, 3, 6, 2, 1, 4], [0, 0, 0, 0, 0, 3]),
@@ -154,10 +155,9 @@ def restart(role):
     for key in keys_map.keys():
         time.sleep(0.2)
         win32api.keybd_event(keys_map[key], virtual_key_map[key], win32con.KEYEVENTF_KEYUP, 0)
-    time.sleep(2)
     # 初次载入需要按任意键，不然导致后面开始按键失效
     # 选single play，advanced, 选kyo
-    operation3('as22aaaaaaaa')
+    operation3('aaaaass22aaaaaaaa')
     # 有时候会卡一下，有可能是设置对手的原因
     # 选人全部放到lua脚本进行，这里只是让程序走下去
 
@@ -219,6 +219,6 @@ def test():
 
 if __name__ == '__main__':
     time.sleep(5)
-    #global_set('kyo')
-    #test()
+    # global_set('kyo')
+    # test()
     operation()
