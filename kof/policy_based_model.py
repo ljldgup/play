@@ -254,13 +254,21 @@ class Critic(DoubleDQN):
 
         time = raw_env['time'].reindex(train_index).diff(1).shift(-1).fillna(1).values
 
-        next_action_reward = target_model_prediction[range(len(train_index))]
+        next_q = target_model_prediction[range(len(train_index))]
 
-        next_action_reward = np.roll(next_action_reward, -1)
-        next_action_reward[time > 0] = 0
+        next_reward = reward.copy()
+        for i in range(self.multi_steps - 1):
+            next_reward = np.roll(next_reward, -1)
+            # 从下一个round往上移动的，reward为0
+            next_reward[time > 0] = 0
+            reward += next_reward * self.reward_decay ** (i + 1)
 
-        reward = np.expand_dims(reward, 1)
-        reward += self.reward_decay * next_action_reward
+        # 加上target model第multi_steps+1个步骤的Q值
+        for i in range(self.multi_steps):
+            next_q = np.roll(next_q, -1)
+            # 从下一个round往上移动的，reward为0
+            next_q[time > 0] = 0
+        reward += next_q * self.reward_decay ** self.multi_steps
 
         td_error = reward - predict_model_prediction[range(len(train_index))]
         td_error = td_error.flatten()
@@ -270,13 +278,13 @@ class Critic(DoubleDQN):
 
 
 if __name__ == '__main__':
-    model1 = ActorCritic('iori')
-    # model2 = Critic('iori')
+    # model1 = ActorCritic('iori')
+    model2 = Critic('iori')
 
     # model2 = PPO('iori')
-    model3 = DDPG('iori')
+    # model3 = DDPG('iori')
 
-    model3.train_model_with_sum_tree(0, [1], epochs=40)
+    model2.train_model_with_sum_tree(0, [1], epochs=40)
     '''
     for i in range(1, 10):
         try:
