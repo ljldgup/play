@@ -175,6 +175,7 @@ class PPO(ActorCritic):
         self.critic.train_model_with_sum_tree(folder, round_nums=round_nums, batch_size=batch_size, epochs=epochs)
 
 
+# DDPG适合连续的动作空间，用在这里不合适
 class DDPG(ActorCritic):
     def __init__(self, role, model_name='PPO_actor'):
         self.TAU = 0.2
@@ -245,6 +246,7 @@ class Critic(DoubleDQN):
     # 只有状态价值v值，标量
     def critic_dqn_train_data(self, raw_env, train_env, train_index):
         reward = raw_env['reward'].reindex(train_index)
+        reward = reward.values
         action = raw_env['action'].reindex(train_index)
         action = action.astype('int')
 
@@ -254,8 +256,8 @@ class Critic(DoubleDQN):
 
         time = raw_env['time'].reindex(train_index).diff(1).shift(-1).fillna(1).values
 
-        next_q = target_model_prediction[range(len(train_index))]
-
+        # , 0是为了reward相加结构对称
+        next_q = target_model_prediction[range(len(train_index)), 0]
         next_reward = reward.copy()
         for i in range(self.multi_steps - 1):
             next_reward = np.roll(next_reward, -1)
@@ -270,21 +272,20 @@ class Critic(DoubleDQN):
             next_q[time > 0] = 0
         reward += next_q * self.reward_decay ** self.multi_steps
 
-        td_error = reward - predict_model_prediction[range(len(train_index))]
-        td_error = td_error.flatten()
-        predict_model_prediction[range(len(train_index))] = reward
+        td_error = reward - predict_model_prediction[range(len(train_index)), 0]
+        predict_model_prediction[range(len(train_index)), 0] = reward
 
         return [predict_model_prediction, td_error, [None, action]]
 
 
 if __name__ == '__main__':
     # model1 = ActorCritic('iori')
-    model2 = Critic('iori')
+    # model2 = Critic('iori')
 
-    # model2 = PPO('iori')
+    model2 = PPO('iori')
     # model3 = DDPG('iori')
 
-    model2.train_model_with_sum_tree(0, [1], epochs=40)
+    model2.train_model_with_sum_tree(6, [1], epochs=40)
     '''
     for i in range(1, 10):
         try:

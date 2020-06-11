@@ -34,7 +34,6 @@ def train_on_mame(model, train=True, round_num=12):
     # 存放数据路径
     folder_num = 1
 
-
     while os.path.exists(str(folder_num)):
         folder_num += 1
     data_dir = os.getcwd() + '/' + str(int(folder_num))
@@ -94,6 +93,9 @@ def train_on_mame(model, train=True, round_num=12):
                         # model.e_greedy = 0.6 * count / round_num + 0.6
                         print('greedy:', model.e_greedy)
 
+                        # 随着时间的增加，较少multi_steps
+                        model.multi_steps = 8 // count + 1
+
                     time.sleep(4)
                     # 重启，role用来选人
                     restart(model.role)
@@ -140,9 +142,9 @@ def train_on_mame(model, train=True, round_num=12):
 
 if __name__ == '__main__':
     # dqn_model = DoubleDQN('iori')
-    # dqn_model = PPO('iori')
-    dqn_model = DDPG('iori')
+    dqn_model = PPO('iori')
     # dqn_model = DuelingDQN('iori')
+    # dqn_model = DistributionalDQN('iori')
     # dqn_model = RandomAgent('iori')
     # model.load_model('1233')
     # model = random_model('kyo')
