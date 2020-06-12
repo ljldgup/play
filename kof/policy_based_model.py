@@ -1,8 +1,10 @@
 import os
 import random
+import traceback
+
 import numpy as np
 
-from kof.kof_agent import KofAgent
+from kof.kof_agent import KofAgent, train_model_1by1
 from tensorflow.keras import layers
 from tensorflow.python.keras import Input, Model
 from tensorflow.python.keras.layers import BatchNormalization
@@ -10,6 +12,7 @@ from tensorflow.python.keras.optimizers import Adam
 from tensorflow.keras import losses
 from tensorflow.keras import backend as K
 import tensorflow as tf
+from matplotlib import pyplot as plt
 
 from kof.sumtree import SumTree
 from kof.value_based_models import DuelingDQN, DoubleDQN
@@ -24,6 +27,8 @@ def DDPG_loss(y_true, y_pred):
     return -K.mean(y_true * y_pred)
 
 
+# 这里发现一个问题，就是使用model.fit进行训练，无论返回正还是负的，最终训练都是用正的
+# 因为 有可能是负的，所以loss有可能是负数
 class PPO_Loss(layers.Layer):
     def __init__(self, **kwargs):
         super(PPO_Loss, self).__init__(**kwargs)
@@ -38,8 +43,8 @@ class PPO_Loss(layers.Layer):
         # 复杂的损失函数
         ration = p_new / p_old
         adv = r * K.log(p_new)
-        loss = K.mean(K.minimum(ration * adv,
-                                K.clip(ration, 1. - epsilon, 1. + epsilon) * adv))
+        loss = -K.mean(K.minimum(ration * adv,
+                                 K.clip(ration, 1. - epsilon, 1. + epsilon) * adv))
         self.add_loss(loss, inputs=inputs)
         return loss
 
@@ -74,24 +79,22 @@ class ActorCritic(DoubleDQN):
         action_onehot[range(len(action[1])), action[1]] = td_error
         return action_onehot, td_error, action
 
-    def train_model_with_sum_tree(self, folder, round_nums=[], batch_size=64, epochs=30):
+    def train_model(self, folder, round_nums=[], batch_size=64, epochs=30):
         # 先使用critic的td_error交叉熵训练actor，再训练critic
         # 注意这里由于PG算法限制，数据只能用一次。。。用完概率分布就改变了，公式就不满足了，PPO对此作了改进
         print(self.model_name)
         # KofAgent.train_model_with_sum_tree(self, folder, round_nums=round_nums, batch_size=batch_size, epochs=1)
-        KofAgent.train_model_with_sum_tree(self, folder, round_nums=round_nums, batch_size=batch_size,
-                                           epochs=epochs)
-
+        KofAgent.train_model(self, folder, round_nums, batch_size, epochs)
         print('train_critic')
-        self.critic.train_model_with_sum_tree(folder, round_nums=round_nums, batch_size=batch_size, epochs=epochs)
+        self.critic.train_model(folder, round_nums=round_nums, batch_size=batch_size, epochs=epochs)
 
     def save_model(self):
         DoubleDQN.save_model(self)
         self.critic.save_model()
 
     def weight_copy(self):
-        self.critic.weight_copy()
-        DoubleDQN.weight_copy(self)
+        self.critic.soft_weight_copy()
+        DoubleDQN.soft_weight_copy(self)
 
 
 # PPO也是预测概率，build model
@@ -137,11 +140,12 @@ class PPO(ActorCritic):
         reward_onehot[range(len(action[1])), action[1]] = td_error
         return [[reward_onehot, old_prob], td_error, action]
 
-    def train_model_with_sum_tree(self, folder, round_nums=[], batch_size=64, epochs=30):
+    # 暂时不用sumtree
+    def train_model(self, folder, round_nums=[], batch_size=64, epochs=30):
         # 先使用critic的td_error交叉熵训练actor，再训练critic
         # 注意这里由于PG算法限制，数据只能用一次。。。用完概率分布就改变了，公式就不满足了，PPO对此作了改进
-        print(self.model_name)
-        # KofAgent.train_model_with_sum_tree(self, folder, round_nums=round_nums, batch_size=batch_size, epochs=1)
+        print('train ', self.model_name)
+
         if not round_nums:
             files = os.listdir('{}/{}'.format(data_dir, folder))
             data_files = filter(lambda f: '.' in f, files)
@@ -154,25 +158,44 @@ class PPO(ActorCritic):
         # PPO的损失比较复杂放在最后一个损失层来实现，reward等一起作为输入
         train_env += train_target
 
-        sum_tree = SumTree(abs(td_error))
-
         loss_history = []
         print('train {}/{} {} epochs'.format(folder, round_nums, epochs))
         for e in range(epochs):
             loss = 0
             for i in range(len(train_index) // batch_size):
-                index = sum_tree.gen_batch_index(batch_size)
+                index = range(i * batch_size, (i + 1) * batch_size)
                 # train_model loss层没有y
                 loss += self.trained_model.train_on_batch([env[index] for env in train_env])
-            loss_history.append(loss)
-        for loss in loss_history:
-            # 根据标准公式，这里需要求个均值
             print(loss / (len(train_index) // batch_size))
+            loss_history.append(loss)
+
         self.record['total_epochs'] += epochs
         # PPO的参数每轮都需要更新一次，概率分布不能太远
         self.predict_model.set_weights(self.trained_model.get_weights())
         print('train_critic')
-        self.critic.train_model_with_sum_tree(folder, round_nums=round_nums, batch_size=batch_size, epochs=epochs)
+        self.critic.train_model(folder, round_nums=round_nums, batch_size=batch_size, epochs=epochs)
+
+    def value_test(self, folder, round_nums):
+        # q值分布可视化
+        raw_env = self.raw_data_generate(folder, round_nums)
+        train_env, train_index = self.train_env_generate(raw_env)
+        train_reward, td_error, n_action = self.train_reward_generate(raw_env, train_env, train_index)
+
+        # 这里是训练数据但是也可以拿来参考,查看是否过估计，目前所有的模型几乎都会过估计
+        print('max reward:', train_reward[1].max())
+        print('min reward:', train_reward[1].min())
+        '''
+        # 这里所有的图在一个图上，plt.figure()
+        # 这里不压平flatten会按照第一个维度动作数来统计
+        plt.hist(train_reward.flatten(), bins=30, label=self.model_name)
+        # 加了这句才显示lable
+        plt.legend()
+        '''
+
+        fig1 = plt.figure()
+        ax1 = fig1.add_subplot(111)
+        ax1.hist(train_reward[1].flatten(), bins=30, label=self.model_name)
+        fig1.legend()
 
 
 # DDPG适合连续的动作空间，用在这里不合适
@@ -196,28 +219,8 @@ class DDPG(ActorCritic):
         # PPO用到运行时的分布
         action_onehot = np.zeros(shape=(len(action[1]), self.action_num))
 
-        # 直接将A处以采样的概率分布，keras太复杂的实现起来比较麻烦
         action_onehot[range(len(action[1])), action[1]] = td_error
         return [action_onehot, td_error, action]
-
-    def weight_copy(self):
-        """soft update target model.
-        formula：θ​​t ← τ * θ + (1−τ) * θt, τ << 1.
-        """
-        critic_weights = self.critic.predict_model.get_weights()
-        critic_target_weights = self.critic.target_model.get_weights()
-
-        actor_weights = self.predict_model.get_weights()
-        actor_target_weights = self.target_model.get_weights()
-
-        for i in range(len(critic_weights)):
-            critic_target_weights[i] = self.TAU * critic_weights[i] + (1 - self.TAU) * critic_target_weights[i]
-
-        for i in range(len(actor_weights)):
-            actor_target_weights[i] = self.TAU * actor_weights[i] + (1 - self.TAU) * actor_target_weights[i]
-
-        self.critic.target_model.set_weights(critic_target_weights)
-        self.target_model.set_weights(actor_target_weights)
 
 
 class Critic(DoubleDQN):
@@ -225,7 +228,7 @@ class Critic(DoubleDQN):
         DoubleDQN.__init__(self, role=role, model_name=model_name)
         self.train_reward_generate = self.critic_dqn_train_data
         # 这设置一个较大multi_steps值
-        self.multi_steps = 16
+        self.multi_steps = 6
 
     def build_model(self):
         shared_model = self.build_shared_model()
@@ -285,19 +288,9 @@ if __name__ == '__main__':
     model2 = PPO('iori')
     # model3 = DDPG('iori')
 
-    model2.train_model_with_sum_tree(6, [1], epochs=40)
+    train_model_1by1(model2, range(10), range(1, 7))
+    model2.value_test(8, [1])
     '''
-    for i in range(1, 10):
-        try:
-            print('train ', i)
-            for num in range(1, 3):
-                model.train_model_with_sum_tree(i, [num], epochs=40)
-                # model.train_model(i, [num], epochs=80)
-                model.weight_copy()
-        except:
-            # print('no data in ', i)
-            traceback.print_exc()
-    model.save_model()
     '''
 
     '''

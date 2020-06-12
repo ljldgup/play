@@ -35,7 +35,7 @@ data_dir = os.getcwd()
 # 接近BN层貌似一定程度上会导致过估计，所以暂时删掉
 class DoubleDQN(KofAgent):
 
-    def __init__(self, role, model_name='double_dqn', reward_decay=0.98):
+    def __init__(self, role, model_name='double_dqn', reward_decay=0.94):
         super().__init__(role=role, model_name=model_name, reward_decay=reward_decay)
         # 把target_model移到value based文件中,因为policy based不需要
         self.target_model = self.build_model()
@@ -106,11 +106,25 @@ class DoubleDQN(KofAgent):
         predict_model_prediction[predict_model_prediction < -2] = -2
         return [predict_model_prediction, td_error, [pre_actions, action.values]]
 
+    def train_model(self, folder, round_nums=[], batch_size=64, epochs=30):
+        self.train_model_with_sum_tree(folder, round_nums, batch_size, epochs)
+
+    # soft型,指数平滑拷贝
+    def soft_weight_copy(self):
+        mu = 0.05
+        weights = self.predict_model.get_weights()
+        target_weights = self.target_model.get_weights()
+
+        for i in range(len(weights)):
+            target_weights[i] = mu * weights[i] + (1 - mu) * target_weights[i]
+
+        self.target_model.set_weights(target_weights)
+
     def weight_copy(self):
         self.target_model.set_weights(self.predict_model.get_weights())
 
     def save_model(self, ):
-        self.weight_copy()
+        self.soft_weight_copy()
         KofAgent.save_model(self)
 
     def value_test(self, folder, round_nums):
@@ -162,22 +176,22 @@ class DuelingDQN(DoubleDQN):
         return model
 
 
-def train_model(model, folders, rounds):
+def train_model(model, folders):
     print('-----------------------------')
     print('train ', model.model_name)
     # 在刚开始训练网络的时候使用
-    # model.multi_steps = 10
+    model.multi_steps = 8
     for i in folders:
         try:
             print('train ', i)
             # model.train_model(i)
-            model.train_model_with_sum_tree(i, epochs=25)
+            model.train_model(i, epochs=60)
             # 这种直接拷贝的效果和nature DQN其实没有区别。。所以放到外层去拷贝，训练时应该加大拷贝的间隔
-            # model.weight_copy()
+            # 改成soft copy
+            model.soft_weight_copy()
         except:
             traceback.print_exc()
-    if i % 4 == 0:
-        model.save_model()
+        model.multi_steps = model.multi_steps // 2 + 1
 
 
 if __name__ == '__main__':
@@ -188,13 +202,15 @@ if __name__ == '__main__':
     # model.model_test(2, [1,2])
     # model.predict_model.summary()
     # t = model.operation_analysis(5)
-    '''
-    for model in models:
-        train_model(model, list(range(9, 24)), list((range(1, 7))))
-    '''
+
+    for i in range(10):
+        model.train_model_with(i, epochs=80)
+        model.weight_copy()
+
     '''
     for model in models:
         model.value_test(1, [1])
+    '''
     '''
     raw_env = model.raw_data_generate(1, [1])
     train_env, train_index = model.train_env_generate(raw_env)
@@ -204,3 +220,4 @@ if __name__ == '__main__':
     # output = model.output_test([ev[50].reshape(1, *ev[50].shape) for ev in train_env])
     # train_reward[range(len(n_action[1])), n_action[1]]
     model.model_test(1, [1])
+    '''

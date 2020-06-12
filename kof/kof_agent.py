@@ -1,6 +1,7 @@
 import os
 import random
 import time
+import traceback
 
 import pandas as pd
 import numpy as np
@@ -49,6 +50,26 @@ def get_maxsize_file(folder):
     return np.array(file_size).argsort()[0:6]
 
 
+def train_model_1by1(model, folders, rounds):
+    print('-----------------------------')
+    print('train ', model.model_name)
+
+    # 在刚开始训练网络的时候使用
+    model.multi_steps = 8
+    for i in folders:
+        for r in rounds:
+            try:
+                print('train ', i)
+                # model.train_model(i)
+                model.train_model(i, [r], epochs=60)
+                # 这种直接拷贝的效果和nature DQN其实没有区别。。所以放到外层去拷贝，训练时应该加大拷贝的间隔
+                # 改成soft copy
+                model.soft_weight_copy()
+            except:
+                traceback.print_exc()
+        model.multi_steps = model.multi_steps // 2 + 1
+
+
 class KofAgent:
     def __init__(self, role, model_name,
                  reward_decay=0.94,
@@ -59,7 +80,7 @@ class KofAgent:
         self.e_greedy = 0.95
         # 输入步数
         self.input_steps = input_steps
-        self.multi_steps = 1
+        self.multi_steps = 10
         global_set(role)
         self.action_num = len(role_commands[role])
         self.predict_model = self.build_model()
@@ -196,27 +217,22 @@ class KofAgent:
 
     # Prioritized Replay DQN 使用sumtree 生成 batch
     def train_model_with_sum_tree(self, folder, round_nums=[], batch_size=64, epochs=30):
-        if not round_nums:
-            files = os.listdir('{}/{}'.format(data_dir, folder))
-            data_files = filter(lambda f: '.' in f, files)
-            round_nums = list(set([file.split('.')[0] for file in data_files]))
-
         raw_env = self.raw_data_generate(folder, round_nums)
         train_env, train_index = self.train_env_generate(raw_env)
         train_target, td_error, action = self.train_reward_generate(raw_env, train_env, train_index)
         sum_tree = SumTree(abs(td_error))
         loss_history = []
-        print('train {}/{} {} epochs'.format(folder, round_nums, epochs))
+        print('train with sum tree {}/{} {} epochs'.format(folder, round_nums, epochs))
         for e in range(epochs):
             loss = 0
             for i in range(len(train_target) // batch_size):
                 index = sum_tree.gen_batch_index(batch_size)
                 loss += self.predict_model.train_on_batch([env[index] for env in train_env], train_target[index])
             loss_history.append(loss)
-        for loss in loss_history:
-            # 根据标准公式，这里需要求个均值
             print(loss / (len(train_index) // batch_size))
+
         self.record['total_epochs'] += epochs
+        return loss_history
 
     def save_model(self):
         if not os.path.exists('{}/model'.format(data_dir)):
