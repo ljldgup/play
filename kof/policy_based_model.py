@@ -4,7 +4,7 @@ import traceback
 
 import numpy as np
 
-from kof.kof_agent import KofAgent, train_model_1by1
+from kof.kof_agent import KofAgent, train_model_1by1, get_maxsize_file
 from tensorflow.keras import layers
 from tensorflow.python.keras import Input, Model
 from tensorflow.python.keras.layers import BatchNormalization
@@ -14,12 +14,11 @@ from tensorflow.keras import backend as K
 import tensorflow as tf
 from matplotlib import pyplot as plt
 
-from kof.sumtree import SumTree
-from kof.value_based_models import DuelingDQN, DoubleDQN
+from kof.value_based_models import DoubleDQN
 
 tf.compat.v1.disable_eager_execution()
 data_dir = os.getcwd()
-epsilon = 0.1
+epsilon = 0.01
 
 
 def DDPG_loss(y_true, y_pred):
@@ -40,12 +39,16 @@ class PPO_Loss(layers.Layer):
         """
         # 解包入参
         r, p_old, p_new = inputs
+
+        # 有时概率会为0，导致输出loss极大，做剪裁来避免
+        p_new = K.clip(p_new, 0.001, 1)
+
         # 复杂的损失函数
         ration = p_new / p_old
         adv = r * K.log(p_new)
         loss = -K.mean(K.minimum(ration * adv,
                                  K.clip(ration, 1. - epsilon, 1. + epsilon) * adv))
-        self.add_loss(loss, inputs=inputs)
+        self.add_loss(-K.mean(ration), inputs=inputs)
         return loss
 
 
@@ -57,11 +60,13 @@ class ActorCritic(DoubleDQN):
         self.train_reward_generate = self.actor_tarin_data
         self.actor = self.predict_model
 
-    def choose_action(self, raw_data, action, random_choose=False):
+    def choose_action(self, raw_data, random_choose=False):
         if random_choose or random.random() > self.e_greedy:
             return random.randint(0, self.action_num - 1)
         else:
-            return self.predict_model.predict(self.raw_env_data_to_input(raw_data, action)).argmax()
+            # 使用np.random.choice返回采样结果
+            prob = self.predict_model.predict(self.raw_env_data_to_input(raw_data))
+            return np.random.choice(self.action_num, p=prob[0])
 
     def build_model(self):
         shared_model = self.build_shared_model()
@@ -72,10 +77,14 @@ class ActorCritic(DoubleDQN):
         return model
 
     def actor_tarin_data(self, raw_env, train_env, train_index):
-        _, td_error, action = self.critic.train_reward_generate(raw_env, train_env, train_index)
+        adv, td_error, action = self.critic.train_reward_generate(raw_env, train_env, train_index)
         # 构造onehot，将1改为td_error,
         # 使用mean(td_error * (log(action_prob)))，作为损失用于训练
-        action_onehot = np.zeros(shape=(len(action[1]), self.action_num))
+
+        # 使用一定的噪声初始化，尽可能避免概率收敛到过激值
+        action_onehot = np.random.rand(len(action[1]), self.action_num) / 100
+
+        # 这里即可使用价值，也可以同td_error
         action_onehot[range(len(action[1])), action[1]] = td_error
         return action_onehot, td_error, action
 
@@ -92,9 +101,13 @@ class ActorCritic(DoubleDQN):
         DoubleDQN.save_model(self)
         self.critic.save_model()
 
-    def weight_copy(self):
+    def soft_weight_copy(self):
         self.critic.soft_weight_copy()
-        DoubleDQN.soft_weight_copy(self)
+        DoubleDQN.soft_weight_copy()
+
+    def weight_copy(self):
+        self.critic.weight_copy()
+        DoubleDQN.weight_copy(self)
 
 
 # PPO也是预测概率，build model
@@ -106,7 +119,7 @@ class PPO(ActorCritic):
         # 用于训练的模型
         self.trained_model = self.build_train_model()
         self.trained_model.set_weights(self.predict_model.get_weights())
-        self.copy_interval = 4
+        self.copy_interval = 6
 
     def build_model(self):
         shared_model = self.build_shared_model()
@@ -132,12 +145,15 @@ class PPO(ActorCritic):
         return model
 
     def actor_tarin_data(self, raw_env, train_env, train_index):
-
-        _, td_error, action = self.critic.train_reward_generate(raw_env, train_env, train_index)
+        adv, td_error, action = self.critic.train_reward_generate(raw_env, train_env, train_index)
         # PPO用到运行时的分布
         old_prob = self.target_model.predict(train_env)
-        reward_onehot = np.zeros(shape=(len(action[1]), self.action_num))
-        reward_onehot[range(len(action[1])), action[1]] = td_error
+
+        # 即使softmax也有可能是0,或者极小，这样就导致计算得到nan,或者非常大，
+        # 这里设置成一个相对小的数
+        old_prob[old_prob < 0.001] = 0.001
+        reward_onehot = np.random.rand(len(action[1]), self.action_num) / 100 + 0.01
+        reward_onehot[range(len(action[1])), action[1]] = adv[:, 0]
         return [[reward_onehot, old_prob], td_error, action]
 
     # 暂时不用sumtree
@@ -147,9 +163,7 @@ class PPO(ActorCritic):
         print('train ', self.model_name)
 
         if not round_nums:
-            files = os.listdir('{}/{}'.format(data_dir, folder))
-            data_files = filter(lambda f: '.' in f, files)
-            round_nums = list(set([file.split('.')[0] for file in data_files]))
+            round_nums = get_maxsize_file(folder)
 
         raw_env = self.raw_data_generate(folder, round_nums)
         train_env, train_index = self.train_env_generate(raw_env)
@@ -157,6 +171,8 @@ class PPO(ActorCritic):
 
         # PPO的损失比较复杂放在最后一个损失层来实现，reward等一起作为输入
         train_env += train_target
+
+        self.trained_model.set_weights(self.predict_model.get_weights())
 
         loss_history = []
         print('train {}/{} {} epochs'.format(folder, round_nums, epochs))
@@ -172,6 +188,7 @@ class PPO(ActorCritic):
         self.record['total_epochs'] += epochs
         # PPO的参数每轮都需要更新一次，概率分布不能太远
         self.predict_model.set_weights(self.trained_model.get_weights())
+        self.target_model.set_weights(self.trained_model.get_weights())
         print('train_critic')
         self.critic.train_model(folder, round_nums=round_nums, batch_size=batch_size, epochs=epochs)
 
@@ -179,11 +196,10 @@ class PPO(ActorCritic):
         # q值分布可视化
         raw_env = self.raw_data_generate(folder, round_nums)
         train_env, train_index = self.train_env_generate(raw_env)
-        train_reward, td_error, n_action = self.train_reward_generate(raw_env, train_env, train_index)
-
+        ans = self.predict_model.predict(train_env)
         # 这里是训练数据但是也可以拿来参考,查看是否过估计，目前所有的模型几乎都会过估计
-        print('max reward:', train_reward[1].max())
-        print('min reward:', train_reward[1].min())
+        print('max reward:', ans.max())
+        print('min reward:', ans.min())
         '''
         # 这里所有的图在一个图上，plt.figure()
         # 这里不压平flatten会按照第一个维度动作数来统计
@@ -191,11 +207,13 @@ class PPO(ActorCritic):
         # 加了这句才显示lable
         plt.legend()
         '''
-
         fig1 = plt.figure()
-        ax1 = fig1.add_subplot(111)
-        ax1.hist(train_reward[1].flatten(), bins=30, label=self.model_name)
-        fig1.legend()
+        for i in range(self.action_num):
+            ax1 = fig1.add_subplot(4, 4, i + 1)
+            ax1.hist(ans[:, i], bins=20)
+            fig1.legend()
+
+        self.critic.value_test(folder, round_nums)
 
 
 # DDPG适合连续的动作空间，用在这里不合适
@@ -217,7 +235,7 @@ class DDPG(ActorCritic):
     def actor_tarin_data(self, raw_env, train_env, train_index):
         _, td_error, action = self.critic.train_reward_generate(raw_env, train_env, train_index)
         # PPO用到运行时的分布
-        action_onehot = np.zeros(shape=(len(action[1]), self.action_num))
+        action_onehot = np.random.rand(10, 20)[len(action[1]), self.action_num] / 100
 
         action_onehot[range(len(action[1])), action[1]] = td_error
         return [action_onehot, td_error, action]
@@ -225,10 +243,11 @@ class DDPG(ActorCritic):
 
 class Critic(DoubleDQN):
     def __init__(self, role, model_name='critic'):
-        DoubleDQN.__init__(self, role=role, model_name=model_name)
+        # policy gradient 应该是个连续的情况，所以这里用比较高的reward_decay
+        DoubleDQN.__init__(self, role=role, model_name=model_name, reward_decay=0.94)
         self.train_reward_generate = self.critic_dqn_train_data
         # 这设置一个较大multi_steps值
-        self.multi_steps = 6
+        self.multi_steps = 2
 
     def build_model(self):
         shared_model = self.build_shared_model()
@@ -259,6 +278,7 @@ class Critic(DoubleDQN):
 
         time = raw_env['time'].reindex(train_index).diff(1).shift(-1).fillna(1).values
 
+        print('multi steps: ', self.multi_steps)
         # , 0是为了reward相加结构对称
         next_q = target_model_prediction[range(len(train_index)), 0]
         next_reward = reward.copy()
@@ -266,9 +286,9 @@ class Critic(DoubleDQN):
             next_reward = np.roll(next_reward, -1)
             # 从下一个round往上移动的，reward为0
             next_reward[time > 0] = 0
-            reward += next_reward * self.reward_decay ** (i + 1)
-
-        # 加上target model第multi_steps+1个步骤的Q值
+            reward += next_reward
+            # reward += next_reward * self.reward_decay ** (i + 1)
+            # 加上target model第multi_steps+1个步骤的Q值
         for i in range(self.multi_steps):
             next_q = np.roll(next_q, -1)
             # 从下一个round往上移动的，reward为0
@@ -286,17 +306,20 @@ if __name__ == '__main__':
     # model2 = Critic('iori')
 
     model2 = PPO('iori')
+
+    model2.train_model(15, [1])
     # model3 = DDPG('iori')
-
-    train_model_1by1(model2, range(10), range(1, 7))
-    model2.value_test(8, [1])
+    '''
+    train_model_1by1(model2, range(5, 7), range(1, 10))
+    model2.value_test(6, [1])
+    model2.save_model()
     '''
     '''
-
-    '''
-    raw_env = model2.raw_data_generate(0, [1])
+    raw_env = model2.raw_data_generate(1, [1])
     train_env, train_index = model2.train_env_generate(raw_env)
     train_distribution, td_error, n_action = model2.actor_tarin_data(raw_env, train_env, train_index)
     t = model2.predict_model.predict([np.expand_dims(env[100], 0) for env in train_env])
     t = model2.predict_model.predict(train_env)
+    # 这里发现loss为nan，因为损失已经上溢，某些p过小，导致做除数或者对数返回值过大，目前都做了剪裁
+    # np.sum(train_distribution[0] * t / train_distribution[1] * np.log(t))
     '''

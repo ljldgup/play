@@ -30,13 +30,13 @@ class DistributionalDQN(DoubleDQN):
         self.rewards_values = np.linspace(self.vmin, self.vmax, self.N)
         self.rewards_distribution = np.array([[self.rewards_values] * self.action_num])
         self.train_reward_generate = self.distributional_dqn_train_data
-        self.copy_interval = 2
+        self.copy_interval = 6
 
-    def choose_action(self, raw_data, action, random_choose=False):
+    def choose_action(self, raw_data, random_choose=False):
         if random_choose or random.random() > self.e_greedy:
             return random.randint(0, self.action_num - 1)
         else:
-            ans = self.predict_model.predict(self.raw_env_data_to_input(raw_data, action))
+            ans = self.predict_model.predict(self.raw_env_data_to_input(raw_data))
 
             # 分布乘以对应reward得到期望，然后返回reward期望最大的动作
             return (ans * self.rewards_distribution).sum(axis=2).argmax()
@@ -81,6 +81,7 @@ class DistributionalDQN(DoubleDQN):
         # 这里shift(-1)把开始移动到之前最后一次
         time = raw_env['time'].reindex(train_index).diff(1).shift(-1).fillna(1).values
 
+        print('multi steps: ', self.multi_steps)
         t_reward = np.array([self.rewards_values] * len(train_index))
         for i in range(self.multi_steps):
             np.roll(t_reward, -1)
@@ -184,17 +185,22 @@ class DistributionalDQN(DoubleDQN):
         # 加了这句才显示lable
         plt.legend()
         '''
-
         fig1 = plt.figure()
-        ax1 = fig1.add_subplot(111)
-        ax1.hist(train_reward_expection.flatten(), bins=30, label=self.model_name)
-        fig1.legend()
+        for i in range(self.action_num):
+            ax1 = fig1.add_subplot(4, 4, i + 1)
+            ax1.hist(train_reward_expection[i], bins=20)
+            fig1.legend()
 
 
 if __name__ == '__main__':
     model = DistributionalDQN('iori')
-    train_model_1by1(model, range(10), range(1, 7))
-    model.value_test(1, [1])
+    # model.train_model(2, [1])
+    model.multi_steps = 8
+    # train_model_1by1(model, range(10), range(1, 7))
+    for i in range(7, 8):
+        model.train_model(i, epochs=30)
+    # model.value_test(2, [1])
+    model.save_model()
     '''
     raw_env = model.raw_data_generate(1, [1])
     train_env, train_index = model.train_env_generate(raw_env)

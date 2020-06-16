@@ -19,6 +19,8 @@ class RandomAgent:
         self.role = role
         self.action_num = len(role_commands[role])
         self.input_steps = 1
+        # 操作间隔步数
+        self.operation_interval = 2
         global_set(role)
 
     def choose_action(self, *args, **kwargs):
@@ -43,11 +45,10 @@ env_colomn = ['role1_action', 'role2_action',
 def get_maxsize_file(folder):
     files = os.listdir('{}/{}'.format(data_dir, folder))
     data_files = filter(lambda f: '.' in f, files)
-    round_nums = list(set([file.split('.')[0] for file in data_files]))
-    round_nums.sort()
-    file_size = map(lambda num: os.path.getsize('{}/{}/{}.env'.format(data_dir, folder, num), round_nums))
+    round_nums = np.array(list(set([file.split('.')[0] for file in data_files])))
+    file_size = map(lambda num: os.path.getsize('{}/{}/{}.env'.format(data_dir, folder, num)), round_nums)
     # 取前6个
-    return np.array(file_size).argsort()[0:6]
+    return round_nums[np.array(list(file_size)).argsort()].tolist()[-6:]
 
 
 def train_model_1by1(model, folders, rounds):
@@ -55,19 +56,23 @@ def train_model_1by1(model, folders, rounds):
     print('train ', model.model_name)
 
     # 在刚开始训练网络的时候使用
-    model.multi_steps = 8
+    # model.multi_steps = 6
+    count = 0
     for i in folders:
         for r in rounds:
             try:
                 print('train ', i)
                 # model.train_model(i)
-                model.train_model(i, [r], epochs=60)
+                model.train_model(i, [r], epochs=30)
                 # 这种直接拷贝的效果和nature DQN其实没有区别。。所以放到外层去拷贝，训练时应该加大拷贝的间隔
                 # 改成soft copy
                 model.soft_weight_copy()
+                count += 1
             except:
                 traceback.print_exc()
-        model.multi_steps = model.multi_steps // 2 + 1
+            if count % 5 == 0:
+                model.weight_copy()
+    model.save_model()
 
 
 class KofAgent:
@@ -78,25 +83,35 @@ class KofAgent:
         self.model_name = model_name
         self.reward_decay = reward_decay
         self.e_greedy = 0.95
+
         # 输入步数
         self.input_steps = input_steps
-        self.multi_steps = 10
+
+        # 操作间隔步数
+        self.operation_interval = 3
+
+        # multi_steps 配合decay使网络趋向真实数据，但这样波动大
+        # 这里调大了间隔后，multi_steps应该减小一些
+        self.multi_steps = 3
+
+        # 模型参数拷贝间隔
+        self.copy_interval = 6
+
         global_set(role)
         self.action_num = len(role_commands[role])
         self.predict_model = self.build_model()
         self.record = self.get_record()
-        # 模型参数拷贝间隔
-        self.copy_interval = 6
+
         if os.path.exists('{}/model/{}_{}.index'.format(data_dir, self.role, self.model_name)):
             print('load model {}'.format(self.role))
             self.load_model()
 
-    def choose_action(self, raw_data, action, random_choose=False):
+    def choose_action(self, raw_data, random_choose=False):
         if random_choose or random.random() > self.e_greedy:
             return random.randint(0, self.action_num - 1)
         else:
             # 根据dqn的理论，这里应该用训练的模型， target只在寻训练的时候使用，并且一定时间后才复制同步
-            return self.predict_model.predict(self.raw_env_data_to_input(raw_data, action)).argmax()
+            return self.predict_model.predict(self.raw_env_data_to_input(raw_data)).argmax()
 
     # 读入round_nums文件下的文件，并计算reward
     def raw_data_generate(self, folder, round_nums):
@@ -119,37 +134,46 @@ class KofAgent:
             raw_env['action'] = raw_actions
             # 筛选时间在流动的列
             raw_env = raw_env[raw_env['time'].diff(1).fillna(0) != 0]
-            life_reward = raw_env['role1_life'].diff(1).fillna(0) - raw_env['role2_life'].diff(1).fillna(0)
+
+            # 这里改成self.operation_interval步一操作，所以diff改成对应的偏移
+            role1_life_reward = raw_env['role1_life'].diff(-self.operation_interval).fillna(0)
+            # 这里是向后比较所以正常返回正值，负的是由于重开造成
+            role1_life_reward[role1_life_reward < 0] = 0
+            role2_life_reward = raw_env['role2_life'].diff(-self.operation_interval).fillna(0)
+            role2_life_reward[role2_life_reward < 0] = 0
+
             # 这里避免新的一局开始，血量回满被误认为报酬
-            life_reward[raw_env['time'].diff(1) > 0] = 0
+            # life_reward[raw_env['time'].diff(1).fillna(1) > 0] = 0
+
+            combo_reward = - raw_env['role1_combo_count'].diff(-self.operation_interval).fillna(0)
 
             # 防守的收益
-            # guard_reward = -raw_env['guard_value'].diff(1).fillna(0)
+            # guard_reward = -raw_env['guard_value'].diff(self.operation_interval).fillna(0)
             # guard_reward = guard_reward.map(lambda x: x if x > 0 else 0)
 
-            # 生成time_steps时间步内的reward
-            # 改成dqn 因为自动加后面一次报酬，后应该不需要rolling
-            # reward_sum = reward.rolling(self.reward_steps, min_periods=1).sum().shift(-self.reward_steps).fillna(0)
-
             # 值要在[-1，1]左右,reward_sum太小反而容易过估计
-            raw_env['raw_reward'] = life_reward
-            raw_env['reward'] = life_reward / 40
+            raw_env['raw_reward'] = role2_life_reward - role1_life_reward + combo_reward
+            raw_env['reward'] = raw_env['raw_reward'] / 50
 
             # 当前步的reward实际上是上一步的，我一直没有上移，这是个巨大的错误
-            raw_env['reward'] = raw_env['reward'].shift(-1).fillna(0)
+            # raw_env['reward'] = raw_env['reward'].shift(-1).fillna(0)
+            # 这个地方应该是错误的，因为diff就是当前和之后的差，就是当前action的reward，所以应该不需要再移动
 
+            '''
             # 根据胜负增加额外的报酬,pandas不允许切片或者搜索赋值，只能先这样
             end_index = (raw_env[raw_env['time'].diff(1).shift(-1).fillna(1) > 0]).index
+        
             for idx in end_index:
                 # 这里暂时不明白为什么是loc,我是按索引取得，按理应该是iloc
                 if raw_env.loc[idx]['role1_life'] > raw_env.loc[idx]['role2_life']:
                     raw_env.loc[idx]['reward'] = 0.5
                 else:
                     raw_env.loc[idx]['reward'] = -0.5
+            '''
 
-            # 使用log(n+x)-log(n)缩放reward，防止少量特别大的动作影响收敛，目前来看适当的缩放，收敛效果好。
-            # raw_env['reward'] = reward.map(
-            #     lambda x: math.log10(100 + x) - math.log10(100) if x > 0 else -math.log10(100 - x) + math.log10(100))
+            # r值裁剪
+            raw_env['reward'][raw_env['reward'] > 2] = 2
+            raw_env['reward'][raw_env['reward'] < -2] = -2
 
             return raw_env
 
@@ -159,9 +183,7 @@ class KofAgent:
         train_env_data = self.empty_env()
         train_index = []
 
-        # 直接打乱数据
-        # index_list = raw_env[raw_env['reward'] != 0].index.to_list()
-        for index in raw_env['reward'].index:
+        for index in raw_env['reward'][raw_env['action'] != -1].index:
             # 这里是loc取的数量是闭区间和python list不一样
             # guard_value不用，放在这里先补齐
             env = raw_env[['role1_action', 'role2_action',
@@ -169,18 +191,15 @@ class KofAgent:
                            'role1_position_x', 'role1_position_y',
                            'role2_position_x', 'role2_position_y', 'role1_baoqi', 'role2_baoqi']].loc[
                   index - self.input_steps + 1:index]
-            action = raw_env['action'].loc[index - self.input_steps:index - 1]
 
-            # 之前能够去除time_steps个连续数据，在操作
-            # 这里考虑到输入与步长，所以加大了判断长度 3 * self.input_steps
-            if len(action) != self.input_steps or env.index[-1] - env.index[0] > self.input_steps - 1:
+            # 去掉结尾
+            if len(env) != self.input_steps or \
+                    raw_env['time'].loc[index - self.input_steps + 1] < raw_env['time'].loc[index]:
                 pass
             else:
                 data = env.values
                 data = data.reshape(1, *data.shape)
-                action = action.values
-                action = action.reshape(1, *action.shape)
-                split_data = self.raw_env_data_to_input(data, action)
+                split_data = self.raw_env_data_to_input(data)
 
                 for i in range(len(split_data)):
                     train_env_data[i].append(split_data[i])
@@ -202,6 +221,8 @@ class KofAgent:
     # 改成所有数据何在一起，打乱顺序，使用batch 训练，速度快了很多
     # batch_size的选取不同，损失表现完全不一样
     def train_model(self, folder, round_nums=[], batch_size=64, epochs=30):
+        if not round_nums:
+            round_nums = get_maxsize_file(folder)
 
         raw_env = self.raw_data_generate(folder, round_nums)
         train_env, train_index = self.train_env_generate(raw_env)
@@ -217,6 +238,9 @@ class KofAgent:
 
     # Prioritized Replay DQN 使用sumtree 生成 batch
     def train_model_with_sum_tree(self, folder, round_nums=[], batch_size=64, epochs=30):
+        if not round_nums:
+            round_nums = get_maxsize_file(folder)
+
         raw_env = self.raw_data_generate(folder, round_nums)
         train_env, train_index = self.train_env_generate(raw_env)
         train_target, td_error, action = self.train_reward_generate(raw_env, train_env, train_index)
@@ -266,25 +290,27 @@ class KofAgent:
         role2_x_y = Input(shape=(self.input_steps, 2), name='role2_x_y')
 
         role_position = concatenate([role1_x_y, role2_x_y])
+        role_position = BatchNormalization()(role_position)
         conv_position = layers.SeparableConv1D(8, 1, padding='same', strides=1, kernel_initializer='he_uniform')(
             role_position)
         conv_position = BatchNormalization()(conv_position)
         conv_position = layers.LeakyReLU(0.05)(conv_position)
 
         role_distance = layers.Subtract()([role1_x_y, role2_x_y])
-        conv_distance = layers.SeparableConv1D(4, 2, padding='same', strides=1, kernel_initializer='he_uniform')(
-            role_distance)
-        conv_distance = BatchNormalization()(conv_distance)
+        role_distance = BatchNormalization()(role_distance)
 
-        action_input = Input(shape=(self.input_steps,), name='action_input')
-        action_input_embedding = layers.Embedding(self.action_num, 4, name='action_input_embedding')(action_input)
+        # 使用attention模型
+        time_related_layers = [role1_actions_embedding, conv_position, role_distance,
+                               role2_actions_embedding]
+        lstm_output = []
 
-        concatenate_status = concatenate(
-            [role1_actions_embedding, conv_position, conv_distance,
-             action_input_embedding, role2_actions_embedding])
-        lstm_status = CuDNNLSTM(512)(concatenate_status)
+        # 理论上在self attention外面包一层 rnn就是attention，这边暂时这么干
+        for layer in time_related_layers:
+            t = CuDNNLSTM(256)(layer)
+            lstm_output.append(t)
+        t_status = layers.concatenate(lstm_output)
 
-        t_status = layers.Dense(512, kernel_initializer='he_uniform')(lstm_status)
+        t_status = layers.Dense(512, kernel_initializer='he_uniform')(t_status)
         t_status = BatchNormalization()(t_status)
         t_status = layers.LeakyReLU(0.05)(t_status)
 
@@ -295,20 +321,20 @@ class KofAgent:
              K.squeeze(role2_energy_embedding, 1)])
 
         shared_model = Model([role1_actions, role2_actions, role1_energy, role2_energy,
-                              role1_x_y, role2_x_y, role1_baoqi, role2_baoqi, action_input], t_status)
+                              role1_x_y, role2_x_y, role1_baoqi, role2_baoqi], t_status)
         # 这里模型不能编译，不然后面无法扩充
         return shared_model
 
     # 游戏运行时把原始环境输入，分割成模型能接受的输入，在具体的模型可以修改
-    def raw_env_data_to_input(self, raw_data, action):
+    def raw_env_data_to_input(self, raw_data):
         # 这里energy改成一个只输入最后一个,这里输出的形状应该就是1，貌似在keras中也能正常运作
         # 动作，空间取所有，状态类的只取最后步
         return [raw_data[:, :, 0], raw_data[:, :, 1], raw_data[:, -1, 2], raw_data[:, -1, 3],
-                raw_data[:, :, 4:6], raw_data[:, :, 6:8], raw_data[:, -1, 8], raw_data[:, -1, 9], action]
+                raw_data[:, :, 4:6], raw_data[:, :, 6:8], raw_data[:, -1, 8], raw_data[:, -1, 9]]
 
     # 这里返回的list要和raw_env_data_to_input返回的大小一样
     def empty_env(self):
-        return [[], [], [], [], [], [], [], [], []]
+        return [[], [], [], [], [], [], [], []]
 
     def get_record(self):
         if os.path.exists('{}/model/{}_{}_record'.format(data_dir, self.role, self.model_name)):

@@ -28,12 +28,11 @@ def raise_expection(thread):
 
 def train_on_mame(model, train=True, round_num=12):
     executor = ThreadPoolExecutor(6)
-    # 每次打完训练次数
-    epochs = 60
+    # 每次打完训练次数,太大容易极端化
+    epochs = 50
 
     # 存放数据路径
     folder_num = 1
-
     while os.path.exists(str(folder_num)):
         folder_num += 1
     data_dir = os.getcwd() + '/' + str(int(folder_num))
@@ -75,16 +74,16 @@ def train_on_mame(model, train=True, round_num=12):
 
                             # model.model_test(folder_num, [count])
                             if train:
-                                model.train_model_with_sum_tree(folder_num, [count], epochs=epochs)
+                                model.train_model(folder_num, [count], epochs=epochs)
+                                if count % model.copy_interval == 0:
+                                    model.save_model()
+                                print("重开")
 
                     tmp_action = []
                     tmp_env = []
 
                     # 注意这里train_interval设置成1的话那么，每次训练实际上两个模型是一样的，就是nature dqn
                     count += 1
-                    if train and count % model.copy_interval == 0:
-                        model.save_model()
-                    print("重开")
 
                     if train:
                         # multi_steps 逐渐较少到1，起一定的修正效果， e_greedy增大至1
@@ -94,7 +93,9 @@ def train_on_mame(model, train=True, round_num=12):
                         print('greedy:', model.e_greedy)
 
                         # 随着时间的增加，较少multi_steps
-                        model.multi_steps = 8 // count + 1
+                        model.multi_steps = 3 // count + 1
+                    else:
+                        model.e_greedy = 0.98
 
                     time.sleep(4)
                     # 重启，role用来选人
@@ -102,33 +103,32 @@ def train_on_mame(model, train=True, round_num=12):
 
                 else:
                     tmp_env.append(data)
-                    # 注意tmp_action比 tmp_env长度少1， 所以这里用tmp_action判断
-                    if len(tmp_action) < model.input_steps + 1:
-                        keys = model.choose_action(None, None, random_choose=True)
+
+                    # 该时间步需要操作
+                    if len(tmp_env) % model.operation_interval == 0:
+
+                        # 注意tmp_action比 tmp_env长度少1， 所以这里用tmp_action判断
+                        if len(tmp_action) < model.input_steps + 1:
+                            keys = model.choose_action(None, random_choose=True)
+                        else:
+                            keys = model.choose_action(np.array([tmp_env[-model.input_steps:]]), random_choose=False)
+
+                        # 按键采用一个新的线程执行，其他部分在主线程中进行，避免顺序混乱
+                        # 1p 在右边
+                        if data[4] > data[6]:
+                            t = executor.submit(operation, keys, True)
+                            # executor.submit(operation, keys, True)
+                        else:
+                            t = executor.submit(operation, keys)
+                            # executor.submit(operation, keys)
+                        # 提交异常
+                        executor.submit(raise_expection, t)
+
                     else:
-                        keys = model.choose_action(np.array([tmp_env[-model.input_steps:]]),
-                                                   np.array([tmp_action[-model.input_steps:]]),
-                                                   random_choose=False)
+                        # 如果不在操作的步长上，直接返回-1，不采取任何操作
+                        keys = -1
+
                     tmp_action.append(keys)
-
-                    # 按键采用一个新的线程执行，其他部分在主线程中进行，避免顺序混乱
-                    # 1p 在右边
-
-                    '''
-                    # 使用operation_split_model时采用该函数
-                    simulate(keys)
-                    '''
-                    if data[4] > data[6]:
-                        t = executor.submit(operation, keys, True)
-                        # executor.submit(operation, keys, True)
-                    else:
-                        t = executor.submit(operation, keys)
-                        # executor.submit(operation, keys)
-                    executor.submit(raise_expection, t)
-                    '''
-                    # 如果线程按钮不能正常工作，使用此段
-                    # 捕获executor返回的异常，t为submit返回的值
-                    '''
 
     except:
         traceback.print_exc()
@@ -141,12 +141,12 @@ def train_on_mame(model, train=True, round_num=12):
 
 
 if __name__ == '__main__':
-    # dqn_model = DoubleDQN('iori')
-    dqn_model = PPO('iori')
-    # dqn_model = DuelingDQN('iori')
+    # dqn_model = DoubleDQN('iori')jj
+    # dqn_model = PPO('iori')
+    dqn_model = DuelingDQN('iori')
     # dqn_model = DistributionalDQN('iori')
     # dqn_model = RandomAgent('iori')
-    # model.load_model('1233')
+    # model.load_model('1233')jj
     # model = random_model('kyo')
     folder_num = train_on_mame(dqn_model, True)
     # dqn_model.train_model(folder_num, epochs=20)
@@ -154,4 +154,4 @@ if __name__ == '__main__':
 
     dqn_model.operation_analysis(folder_num)
     dqn_model.value_test(folder_num, [1])
-    dqn_model.model_test(folder_num, [1])
+    dqn_model.model_test(folder_num, [12])

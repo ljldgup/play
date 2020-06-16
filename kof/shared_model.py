@@ -35,11 +35,8 @@ def build_attention_model(input_steps, action_num):
     role_distance = layers.Subtract()([role1_x_y, role2_x_y])
     role_distance = BatchNormalization()(role_distance)
 
-    action_input = Input(shape=(input_steps,), name='action_input')
-    action_input_embedding = layers.Embedding(action_num, 4, name='action_input_embedding')(action_input)
-
     # 使用attention模型
-    time_related_layers = [role1_actions_embedding, conv_position, role_distance, action_input_embedding,
+    time_related_layers = [role1_actions_embedding, conv_position, role_distance,
                            role2_actions_embedding]
     attention_output = []
 
@@ -62,7 +59,7 @@ def build_attention_model(input_steps, action_num):
     # 曝气应该是个综合性影响，所以直接加在最后
 
     shared_model = Model([role1_actions, role2_actions, role1_energy, role2_energy,
-                          role1_x_y, role2_x_y, role1_baoqi, role2_baoqi, action_input], output)
+                          role1_x_y, role2_x_y, role1_baoqi, role2_baoqi], output)
     # 这里模型不能编译，不然后面无法扩充
     return shared_model
 

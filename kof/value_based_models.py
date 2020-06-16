@@ -8,6 +8,8 @@ from tensorflow.keras import layers
 from tensorflow.python.keras import Model
 from tensorflow.python.keras.optimizers import Adam
 
+from kof.shared_model import build_attention_model
+
 '''
 可调参数
 输入
@@ -43,7 +45,8 @@ class DoubleDQN(KofAgent):
         self.train_reward_generate = self.double_dqn_train_data
 
     def build_model(self):
-        shared_model = self.build_shared_model()
+        # shared_model = self.build_shared_model()
+        shared_model = build_attention_model(self.input_steps, self.action_num)
         t_status = shared_model.output
         output = layers.Dense(self.action_num, kernel_initializer='he_uniform')(t_status)
         model = Model(shared_model.input, output, name=self.model_name)
@@ -79,6 +82,7 @@ class DoubleDQN(KofAgent):
         # multi_steps适合再训练初期网络与实际偏差较大的情况下使用
         # 这样能加速训练，但会导致网络无法找到稳定的获利策略，训练一段时间后应该将multi_steps改成1
 
+        print('multi steps: ', self.multi_steps)
         # 将1到multi_steps个步骤的r，乘以衰减后相加
         # 这里原本有一个所以只需要做multi_steps - 1 次
         next_reward = reward.copy()
@@ -124,18 +128,17 @@ class DoubleDQN(KofAgent):
         self.target_model.set_weights(self.predict_model.get_weights())
 
     def save_model(self, ):
-        self.soft_weight_copy()
+        self.weight_copy()
         KofAgent.save_model(self)
 
     def value_test(self, folder, round_nums):
         # q值分布可视化
         raw_env = self.raw_data_generate(folder, round_nums)
         train_env, train_index = self.train_env_generate(raw_env)
-        train_reward, td_error, n_action = self.train_reward_generate(raw_env, train_env, train_index)
-
+        ans = self.predict_model.predict(train_env)
         # 这里是训练数据但是也可以拿来参考,查看是否过估计，目前所有的模型几乎都会过估计
-        print('max reward:', train_reward.max())
-        print('min reward:', train_reward.min())
+        print('max reward:', ans.max())
+        print('min reward:', ans.min())
         '''
         # 这里所有的图在一个图上，plt.figure()
         # 这里不压平flatten会按照第一个维度动作数来统计
@@ -146,7 +149,7 @@ class DoubleDQN(KofAgent):
 
         fig1 = plt.figure()
         ax1 = fig1.add_subplot(111)
-        ax1.hist(train_reward.flatten(), bins=30, label=self.model_name)
+        ax1.hist(ans.flatten(), bins=30, label=self.model_name)
         fig1.legend()
 
 
@@ -154,11 +157,12 @@ class DoubleDQN(KofAgent):
 # 将衰减降低至0.94，去掉了上次动作输入，将1p embedding带宽扩展到8，后效果比之前好了很多
 # 但动作比较集中
 class DuelingDQN(DoubleDQN):
-    def __init__(self, role, model_name='dueling_dqn'):
-        super().__init__(role=role, model_name=model_name)
+    def __init__(self, role, model_name='dueling_dqn', reward_decay=0.94):
+        super().__init__(role=role, model_name=model_name, reward_decay=reward_decay)
 
     def build_model(self):
-        shared_model = self.build_shared_model()
+        # shared_model = self.build_shared_model()
+        shared_model = build_attention_model(self.input_steps, self.action_num)
         t_status = shared_model.output
 
         # 攻击动作，则采用基础标量 + 均值为0的向量策略
@@ -180,7 +184,7 @@ def train_model(model, folders):
     print('-----------------------------')
     print('train ', model.model_name)
     # 在刚开始训练网络的时候使用
-    model.multi_steps = 8
+    model.multi_steps = 6
     for i in folders:
         try:
             print('train ', i)
@@ -191,7 +195,6 @@ def train_model(model, folders):
             model.soft_weight_copy()
         except:
             traceback.print_exc()
-        model.multi_steps = model.multi_steps // 2 + 1
 
 
 if __name__ == '__main__':
@@ -202,22 +205,24 @@ if __name__ == '__main__':
     # model.model_test(2, [1,2])
     # model.predict_model.summary()
     # t = model.operation_analysis(5)
+    model.train_model(15, epochs=40)
+    model.weight_copy()
+    model.save_model()
+    model.value_test(15, [1])
 
-    for i in range(10):
-        model.train_model_with(i, epochs=80)
-        model.weight_copy()
-
     '''
-    for model in models:
-        model.value_test(1, [1])
-    '''
-    '''
-    raw_env = model.raw_data_generate(1, [1])
+    raw_env = model.raw_data_generate(15, [1])
     train_env, train_index = model.train_env_generate(raw_env)
     train_reward, td_error, n_action = model.double_dqn_train_data(raw_env, train_env, train_index)
     # 这里100 对应的是 raw_env 中 100+input_steps左右位置
     t = model.predict_model.predict([np.expand_dims(env[100], 0) for env in train_env])
     # output = model.output_test([ev[50].reshape(1, *ev[50].shape) for ev in train_env])
     # train_reward[range(len(n_action[1])), n_action[1]]
-    model.model_test(1, [1])
+    # model.model_test(1, [1])
+
+
+    # 查看训练数据是否对的上
+    index = 65
+    train_index[index], raw_env['action'].reindex(train_index).values[index], raw_env['reward'].reindex(
+        train_index).values[index], [np.expand_dims(env[index], 0) for env in train_env]
     '''
