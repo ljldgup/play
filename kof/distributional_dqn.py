@@ -3,6 +3,7 @@ import random
 import traceback
 
 import numpy as np
+import tensorflow as tf
 from tensorflow.keras import layers
 from tensorflow.python.keras import Model
 from tensorflow.python.keras.layers import concatenate
@@ -192,18 +193,108 @@ class DistributionalDQN(DoubleDQN):
             fig1.legend()
 
 
+k = 0.05
+N = 21
+quantile = np.linspace(0, 1, 21)
+
+
+# 分位数回归损失公式为 u(τ-δ(u<0)),其中τ为分位数即概率，u=z-θ, z为样本，δ(u<0)当u<0取1
+# 上式可表达为 样本z大于网络预测值θ，即u>0，则 τu, 样本z小于于网络预测值θ，即u<0,则 (τ-1)u,两边都是负数所以得正
+def quantile_regression_loss(y_true, y_pred):
+    u = y_true - y_pred
+    u_quantile = tf.zeros_like(u)
+    u_quantile += quantile
+    # δ(u<0), 注意这里返回的是去绝对值的结果
+    delta_abs = tf.where(u < 0, x=1 - u_quantile, y=u_quantile)
+
+    # quantile 的维度和，y_pred最后一维相同，可以传播
+    # 这里加入 论文中平滑曲线， 在原点有一定平滑作用，当|u| <= k/2 取左边，反之右边
+    u_abs = tf.abs(u)
+    lk = tf.maximum(0.5 * u_abs * u_abs, k * (u_abs - 0.5 * k))
+
+    loss = delta_abs * lk
+    return loss
+
+
+# 分为数回归没概率投影操作，相对比较容易实现
+class QuantileRegressionDQN(DoubleDQN):
+    def __init__(self, role, reward_decay=0.94):
+
+        super().__init__(role=role, model_name='distributional', reward_decay=reward_decay)
+
+        self.train_reward_generate = self.quantile_regression_dqn_train_data
+        self.copy_interval = 6
+
+    def choose_action(self, raw_data, random_choose=False):
+        if random_choose or random.random() > self.e_greedy:
+            return random.randint(0, self.action_num - 1)
+        else:
+            ans = self.predict_model.predict(self.raw_env_data_to_input(raw_data))
+
+            # 这里分位数每个回报值概率是均布的，直接求和应该就行
+            return ans.sum(axis=2).argmax()
+
+    def build_model(self):
+        shared_model = self.build_shared_model()
+        t_status = shared_model.output
+        probability_distribution_layers = []
+        for a in range(self.action_num):
+            t_layer = layers.Dense(128, kernel_initializer='he_uniform')(t_status)
+            t_layer = layers.LeakyReLU(0.05)(t_layer)
+            # 这里输出分位数
+            t_layer = layers.Dense(N)(t_layer)
+            probability_distribution_layers.append(t_layer)
+        probability_output = concatenate(probability_distribution_layers, axis=1)
+        probability_output = layers.Reshape((self.action_num, N))(probability_output)
+
+        model = Model(shared_model.input, probability_output, name=self.model_name)
+        model.compile(optimizer=Adam(), loss=quantile_regression_loss)
+        # model.compile(optimizer=Adam(lr=0.00001), loss='mse')
+
+        return model
+
+    def quantile_regression_dqn_train_data(self, raw_env, train_env, train_index):
+        reward = raw_env['reward'].reindex(train_index)
+        action = raw_env['action'].reindex(train_index)
+        action = action.astype('int')
+
+        predict_quantile = self.predict_model.predict(train_env)
+
+        time = raw_env['time'].reindex(train_index).diff(1).shift(-1).fillna(1).values
+
+        next_reward = reward.copy()
+        for i in range(self.multi_steps - 1):
+            next_reward = np.roll(next_reward, -1)
+            next_reward[time > 0] = 0
+            reward += next_reward * self.reward_decay ** (i + 1)
+
+        next_predict_quantile = predict_quantile.copy()
+        for i in range(self.multi_steps):
+            next_predict_quantile = np.roll(next_predict_quantile, -1)
+            # 这里是分位数，不再是分布，直接设成0就可以，
+            # 加上reward后就一个值，说明只有一个值，与multi steps也吻合
+            next_predict_quantile[time > 0] = predict_quantile[time > 0]
+        next_predict_quantile[range(len(action)), action] = np.expand_dims(reward, 1) + next_predict_quantile[
+            range(len(action)), action] * self.reward_decay
+        return [next_predict_quantile, None, [None, action]]
+
+    def train_model(self, folder, round_nums=[], batch_size=64, epochs=30):
+        KofAgent.train_model(self, folder, round_nums, batch_size, epochs)
+
+
 if __name__ == '__main__':
-    model = DistributionalDQN('iori')
+    # model = DistributionalDQN('iori')
+    model = QuantileRegressionDQN('iori')
     # model.train_model(2, [1])
-    model.multi_steps = 8
+    # model.multi_steps = 8
     # train_model_1by1(model, range(10), range(1, 7))
-    for i in range(7, 8):
-        model.train_model(i, epochs=30)
+    # for i in range(7, 8):
+    '''
+    model.train_model(3, [1], epochs=30)
     # model.value_test(2, [1])
     model.save_model()
     '''
-    raw_env = model.raw_data_generate(1, [1])
+    raw_env = model.raw_data_generate(3, [1])
     train_env, train_index = model.train_env_generate(raw_env)
-    train_distribution, td_error, n_action = model.distributional_dqn_train_data(raw_env, train_env, train_index)
+    train_distribution, td_error, n_action = model.train_reward_generate(raw_env, train_env, train_index)
     t = model.predict_model.predict([np.expand_dims(env[100], 0) for env in train_env])
-    '''
