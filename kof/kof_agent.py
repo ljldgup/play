@@ -61,12 +61,12 @@ def train_model_1by1(model, folders, rounds):
     for i in folders:
         for r in rounds:
             try:
-                print('train ', i)
+                print('train {}/{}'.format(i, r))
                 # model.train_model(i)
                 model.train_model(i, [r], epochs=30)
                 # 这种直接拷贝的效果和nature DQN其实没有区别。。所以放到外层去拷贝，训练时应该加大拷贝的间隔
                 # 改成soft copy
-                model.soft_weight_copy()
+                # model.soft_weight_copy()
                 count += 1
             except:
                 traceback.print_exc()
@@ -78,7 +78,7 @@ def train_model_1by1(model, folders, rounds):
 class KofAgent:
     def __init__(self, role, model_name,
                  reward_decay=0.94,
-                 input_steps=8):
+                 input_steps=10):
         self.role = role
         self.model_name = model_name
         self.reward_decay = reward_decay
@@ -88,7 +88,7 @@ class KofAgent:
         self.input_steps = input_steps
 
         # 操作间隔步数
-        self.operation_interval = 3
+        self.operation_interval = 2
 
         # multi_steps 配合decay使网络趋向真实数据，但这样波动大
         # 这里调大了间隔后，multi_steps应该减小一些
@@ -161,8 +161,8 @@ class KofAgent:
 
             '''
             # 根据胜负增加额外的报酬,pandas不允许切片或者搜索赋值，只能先这样
-            end_index = (raw_env[raw_env['time'].diff(1).shift(-1).fillna(1) > 0]).index
-        
+            end_index = (raw_env[raw_env[raw_env['action'] != 0]['time'].diff(1).shift(-1).fillna(1) > 0]).index
+
             for idx in end_index:
                 # 这里暂时不明白为什么是loc,我是按索引取得，按理应该是iloc
                 if raw_env.loc[idx]['role1_life'] > raw_env.loc[idx]['role2_life']:
@@ -291,16 +291,12 @@ class KofAgent:
 
         role_position = concatenate([role1_x_y, role2_x_y])
         role_position = BatchNormalization()(role_position)
-        conv_position = layers.SeparableConv1D(8, 1, padding='same', strides=1, kernel_initializer='he_uniform')(
-            role_position)
-        conv_position = BatchNormalization()(conv_position)
-        conv_position = layers.LeakyReLU(0.05)(conv_position)
 
         role_distance = layers.Subtract()([role1_x_y, role2_x_y])
         role_distance = BatchNormalization()(role_distance)
 
         # 使用attention模型
-        time_related_layers = [role1_actions_embedding, conv_position, role_distance,
+        time_related_layers = [role1_actions_embedding, role_position, role_distance,
                                role2_actions_embedding]
         lstm_output = []
 
@@ -329,8 +325,8 @@ class KofAgent:
     def raw_env_data_to_input(self, raw_data):
         # 这里energy改成一个只输入最后一个,这里输出的形状应该就是1，貌似在keras中也能正常运作
         # 动作，空间取所有，状态类的只取最后步
-        return [raw_data[:, :, 0], raw_data[:, :, 1], raw_data[:, -1, 2], raw_data[:, -1, 3],
-                raw_data[:, :, 4:6], raw_data[:, :, 6:8], raw_data[:, -1, 8], raw_data[:, -1, 9]]
+        return [raw_data[:, :, 0], raw_data[:, :, 1], raw_data[:, :, 2], raw_data[:, :, 3],
+                raw_data[:, :, 4:6], raw_data[:, :, 6:8], raw_data[:, :, 8], raw_data[:, :, 9]]
 
     # 这里返回的list要和raw_env_data_to_input返回的大小一样
     def empty_env(self):

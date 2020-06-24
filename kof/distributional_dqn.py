@@ -11,6 +11,7 @@ from tensorflow.python.keras.optimizers import Adam
 from matplotlib import pyplot as plt
 
 from kof.kof_agent import KofAgent, train_model_1by1
+from kof.shared_model import build_multi_attention_model
 from kof.value_based_models import DoubleDQN
 
 data_dir = os.getcwd()
@@ -43,7 +44,7 @@ class DistributionalDQN(DoubleDQN):
             return (ans * self.rewards_distribution).sum(axis=2).argmax()
 
     def build_model(self):
-        shared_model = self.build_shared_model()
+        shared_model = build_multi_attention_model(self.input_steps)
         t_status = shared_model.output
         probability_distribution_layers = []
         for a in range(self.action_num):
@@ -57,7 +58,7 @@ class DistributionalDQN(DoubleDQN):
         probability_output = layers.Reshape((self.action_num, self.N))(probability_output)
 
         model = Model(shared_model.input, probability_output, name=self.model_name)
-        model.compile(optimizer=Adam(), loss='categorical_crossentropy')
+        model.compile(optimizer=Adam(lr=0.00001), loss='categorical_crossentropy')
         # model.compile(optimizer=Adam(lr=0.00001), loss='mse')
 
         return model
@@ -195,7 +196,7 @@ class DistributionalDQN(DoubleDQN):
 
 k = 0.05
 N = 21
-quantile = np.linspace(0, 1, 21)
+quantile = np.linspace(0, 1, N)
 
 
 # 分位数回归损失公式为 u(τ-δ(u<0)),其中τ为分位数即概率，u=z-θ, z为样本，δ(u<0)当u<0取1
@@ -210,7 +211,9 @@ def quantile_regression_loss(y_true, y_pred):
     # quantile 的维度和，y_pred最后一维相同，可以传播
     # 这里加入 论文中平滑曲线， 在原点有一定平滑作用，当|u| <= k/2 取左边，反之右边
     u_abs = tf.abs(u)
-    lk = tf.maximum(0.5 * u_abs * u_abs, k * (u_abs - 0.5 * k))
+    # 这里应该是minimum 不是maximu, 显然用 u_abs * u_abs随着u增大更大，但靠近0才需要这个
+    # k使得直线部分上移了一段，所以也经过原点的1/2*u^2能与直线平滑连接
+    lk = tf.minimum(0.5 * u_abs * u_abs, k * (u_abs - 0.5 * k))
 
     loss = delta_abs * lk
     return loss
@@ -220,7 +223,7 @@ def quantile_regression_loss(y_true, y_pred):
 class QuantileRegressionDQN(DoubleDQN):
     def __init__(self, role, reward_decay=0.94):
 
-        super().__init__(role=role, model_name='distributional', reward_decay=reward_decay)
+        super().__init__(role=role, model_name='quantile_regression', reward_decay=reward_decay)
 
         self.train_reward_generate = self.quantile_regression_dqn_train_data
         self.copy_interval = 6
@@ -281,20 +284,45 @@ class QuantileRegressionDQN(DoubleDQN):
     def train_model(self, folder, round_nums=[], batch_size=64, epochs=30):
         KofAgent.train_model(self, folder, round_nums, batch_size, epochs)
 
+    def value_test(self, folder, round_nums):
+        # q值分布可视化
+        raw_env = self.raw_data_generate(folder, round_nums)
+        train_env, train_index = self.train_env_generate(raw_env)
+        train_reward, td_error, n_action = self.train_reward_generate(raw_env, train_env, train_index)
+        train_reward_expection = np.sum(train_reward, axis=2)
+        # 这里是训练数据但是也可以拿来参考,查看是否过估计，目前所有的模型几乎都会过估计
+        print('max reward:', train_reward_expection.max())
+        print('min reward:', train_reward_expection.min())
+        '''
+        # 这里所有的图在一个图上，plt.figure()
+        # 这里不压平flatten会按照第一个维度动作数来统计
+        plt.hist(train_reward.flatten(), bins=30, label=self.model_name)
+        # 加了这句才显示lable
+        plt.legend()
+        '''
+        fig1 = plt.figure()
+        for i in range(self.action_num):
+            ax1 = fig1.add_subplot(4, 4, i + 1)
+            ax1.hist(train_reward_expection[i], bins=20)
+            fig1.legend()
+
 
 if __name__ == '__main__':
-    # model = DistributionalDQN('iori')
-    model = QuantileRegressionDQN('iori')
+    # 分位数模型目前还有问题，训练后输出的分位数到几千，不知道错误在哪
+    model = DistributionalDQN('iori')
+    # model = QuantileRegressionDQN('iori')
     # model.train_model(2, [1])
     # model.multi_steps = 8
-    # train_model_1by1(model, range(10), range(1, 7))
+    train_model_1by1(model, range(1, 5), range(1, 10))
     # for i in range(7, 8):
-    '''
-    model.train_model(3, [1], epochs=30)
-    # model.value_test(2, [1])
+    model.value_test(3, [1])
     model.save_model()
     '''
+    model.train_model(3, [1], epochs=30)
+    model.save_model()
+
     raw_env = model.raw_data_generate(3, [1])
     train_env, train_index = model.train_env_generate(raw_env)
     train_distribution, td_error, n_action = model.train_reward_generate(raw_env, train_env, train_index)
     t = model.predict_model.predict([np.expand_dims(env[100], 0) for env in train_env])
+    '''

@@ -14,6 +14,7 @@ from tensorflow.keras import backend as K
 import tensorflow as tf
 from matplotlib import pyplot as plt
 
+from kof.shared_model import build_multi_attention_model
 from kof.value_based_models import DoubleDQN
 
 tf.compat.v1.disable_eager_execution()
@@ -69,7 +70,8 @@ class ActorCritic(DoubleDQN):
             return np.random.choice(self.action_num, p=prob[0])
 
     def build_model(self):
-        shared_model = self.build_shared_model()
+        # shared_model = self.build_shared_model()
+        shared_model = build_multi_attention_model(self.input_steps)
         t_status = shared_model.output
         output = layers.Dense(self.action_num, activation='softmax')(t_status)
         model = Model(shared_model.input, output, name=self.model_name)
@@ -122,7 +124,8 @@ class PPO(ActorCritic):
         self.copy_interval = 6
 
     def build_model(self):
-        shared_model = self.build_shared_model()
+        # shared_model = build_attention_model(self.input_steps, self.action_num)
+        shared_model = build_multi_attention_model(self.input_steps)
         t_status = shared_model.output
         output = layers.Dense(self.action_num, activation='softmax')(t_status)
         model = Model(shared_model.input, output, name=self.model_name)
@@ -130,8 +133,10 @@ class PPO(ActorCritic):
         model.compile(optimizer=Adam(lr=0.00001), loss='mse')
         return model
 
+    # 这个模型加了损失层PPO_Loss，用于训练
     def build_train_model(self):
-        shared_model = self.build_shared_model()
+        # shared_model = build_attention_model(self.input_steps, self.action_num)
+        shared_model = build_multi_attention_model(self.input_steps)
         t_status = shared_model.output
         output = layers.Dense(self.action_num, activation='softmax')(t_status)
 
@@ -141,20 +146,23 @@ class PPO(ActorCritic):
         loss = PPO_Loss()([r, old_prob, output])
         input = shared_model.input + [r, old_prob]
         model = Model(input, loss, name=self.model_name)
-        model.compile(optimizer=Adam(lr=0.00001), loss=None)
+        # 减小学习率，避免策略遗忘的太快
+        model.compile(optimizer=Adam(lr=0.000001), loss=None)
         return model
 
     def actor_tarin_data(self, raw_env, train_env, train_index):
         adv, td_error, action = self.critic.train_reward_generate(raw_env, train_env, train_index)
         # PPO用到运行时的分布
         old_prob = self.target_model.predict(train_env)
-
+        old_action = old_prob.argmax(axis=1)
         # 即使softmax也有可能是0,或者极小，这样就导致计算得到nan,或者非常大，
         # 这里设置成一个相对小的数
         old_prob[old_prob < 0.001] = 0.001
-        reward_onehot = np.random.rand(len(action[1]), self.action_num) / 100 + 0.01
-        reward_onehot[range(len(action[1])), action[1]] = adv[:, 0]
-        return [[reward_onehot, old_prob], td_error, action]
+        reward_onehot = np.random.rand(len(action[1]), self.action_num) / 1000 + 0.001
+        # 这里用adv或者te_error都可以
+        # reward_onehot[range(len(action[1])), action[1]] = adv[:, 0]
+        reward_onehot[range(len(action[1])), action[1]] = td_error
+        return [[reward_onehot, old_prob], td_error, [old_action, action[1]]]
 
     # 暂时不用sumtree
     def train_model(self, folder, round_nums=[], batch_size=64, epochs=30):
@@ -250,7 +258,8 @@ class Critic(DoubleDQN):
         self.multi_steps = 2
 
     def build_model(self):
-        shared_model = self.build_shared_model()
+        # shared_model = self.build_shared_model()
+        shared_model = build_multi_attention_model(self.input_steps)
         t_status = shared_model.output
         t_status = layers.Dense(512, kernel_initializer='he_uniform')(t_status)
         t_status = BatchNormalization()(t_status)
@@ -261,7 +270,7 @@ class Critic(DoubleDQN):
 
         model = Model(shared_model.input, value)
 
-        model.compile(optimizer=Adam(lr=0.00001), loss='mse')
+        model.compile(optimizer=Adam(lr=0.000001), loss='mse')
 
         return model
 
@@ -307,12 +316,14 @@ if __name__ == '__main__':
 
     model2 = PPO('iori')
 
-    model2.train_model(15, [1])
+    # model2.train_model(15, [1])
     # model3 = DDPG('iori')
-    '''
-    train_model_1by1(model2, range(5, 7), range(1, 10))
-    model2.value_test(6, [1])
+
+    train_model_1by1(model2, range(1, 11), range(1, 10))
+    model2.value_test(2, [1])
     model2.save_model()
+    '''
+    model2.model_test(5, [1])
     '''
     '''
     raw_env = model2.raw_data_generate(1, [1])

@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 
-from kof.distributional_dqn import DistributionalDQN
+from kof.distributional_dqn import DistributionalDQN, QuantileRegressionDQN
 from kof.kof_agent import RandomAgent
 from kof.policy_based_model import ActorCritic, PPO, DDPG
 from kof.value_based_models import DoubleDQN, DuelingDQN
@@ -77,7 +77,9 @@ def train_on_mame(model, train=True, round_num=12):
                                 model.train_model(folder_num, [count], epochs=epochs)
                                 if count % model.copy_interval == 0:
                                     model.save_model()
-                                print("重开")
+                            # 观察每次训练后的情况，如果变化过大的话，说明学习率过高
+                            dqn_model.model_test(folder_num, [count])
+                            print("重开")
 
                     tmp_action = []
                     tmp_env = []
@@ -88,16 +90,16 @@ def train_on_mame(model, train=True, round_num=12):
                     if train:
                         # multi_steps 逐渐较少到1，起一定的修正效果， e_greedy增大至1
                         # model.multi_steps = 4 // count + 1
-                        model.e_greedy = -1 / (count + 1) + 1.1
-                        # model.e_greedy = 0.6 * count / round_num + 0.6
-                        print('greedy:', model.e_greedy)
+                        # model.e_greedy = -1 / (count + 1) + 1.1
+                        model.e_greedy = 0.7 * count / round_num + 0.6
 
                         # 随着时间的增加，较少multi_steps
                         model.multi_steps = 3 // count + 1
                     else:
                         model.e_greedy = 0.98
 
-                    time.sleep(4)
+                    print('greedy:', model.e_greedy)
+
                     # 重启，role用来选人
                     restart(model.role)
 
@@ -116,13 +118,15 @@ def train_on_mame(model, train=True, round_num=12):
                         # 按键采用一个新的线程执行，其他部分在主线程中进行，避免顺序混乱
                         # 1p 在右边
                         if data[4] > data[6]:
-                            t = executor.submit(operation, keys, True)
-                            # executor.submit(operation, keys, True)
+                            # t = executor.submit(operation, keys, True)
+                            executor.submit(operation, keys, True)
+                            # operation(keys, True)
                         else:
-                            t = executor.submit(operation, keys)
-                            # executor.submit(operation, keys)
-                        # 提交异常
-                        executor.submit(raise_expection, t)
+                            # t = executor.submit(operation, keys)
+                            executor.submit(operation, keys)
+                            # operation(keys)
+                        # 提交异常，这里影响效率，暂时去掉
+                        # executor.submit(raise_expection, t)
 
                     else:
                         # 如果不在操作的步长上，直接返回-1，不采取任何操作
@@ -141,17 +145,20 @@ def train_on_mame(model, train=True, round_num=12):
 
 
 if __name__ == '__main__':
-    # dqn_model = DoubleDQN('iori')jj
+    # dqn_model = DoubleDQN('iori')
     # dqn_model = PPO('iori')
     dqn_model = DuelingDQN('iori')
+    # QuantileRegressionDQN有bug，会过估计，暂时不明白错误在哪里
+    # dqn_model = QuantileRegressionDQN('iori')
     # dqn_model = DistributionalDQN('iori')
     # dqn_model = RandomAgent('iori')
     # model.load_model('1233')jj
     # model = random_model('kyo')
-    folder_num = train_on_mame(dqn_model, True)
+    round_num = 14
+    folder_num = train_on_mame(dqn_model, True, round_num)
     # dqn_model.train_model(folder_num, epochs=20)
     dqn_model.save_model()
 
     dqn_model.operation_analysis(folder_num)
     dqn_model.value_test(folder_num, [1])
-    dqn_model.model_test(folder_num, [12])
+    dqn_model.model_test(folder_num, [round_num])

@@ -3,7 +3,7 @@
 cpu = manager:machine().devices[":maincpu"]
 mem = cpu.spaces["program"]
 frames = 1
-freq = 6 
+freq = 5
 restarted = false
 s = ""
 
@@ -21,10 +21,10 @@ function test()
         if  coin~=4 
         then
             -- 设定成固定人物
-            -- p1 = mem:read_i8(0x10A84e)
+            p1 = mem:read_i8(0x10A84e)
             p2 = mem:read_i8(0x10A861)
 
-            if p2 > 0
+            if p2 > 0 or p1 ~= 27
             then
                 mem:write_i8(0x10A85f, 0)
                 mem:write_i8(0x10A860, 0)
@@ -51,17 +51,16 @@ function test()
                 s = s..mem:read_i8(0x1082E3).." "
                 s = s..mem:read_i8(0x1084E3).." "
 
-                --12p xy坐标
-                t = (mem:read_i16(0X108118)-380)/380
+                --12p xy坐标,去除中心化，直接通过bn层进行处理
+                s = s..mem:read_i16(0X108118).." "
+                s = s..mem:read_i16(0x108120).." "
+                s = s..mem:read_i16(0X108318).." "
+                s = s..mem:read_i16(0x108320).." "
+                
+                --1p曝气
+                t = mem:read_i8(0x1081E0)//16
                 s = s..t.." "
-                t = (mem:read_i16(0x108120)-128)/128
-                s = s..t.." "
-                t = (mem:read_i16(0X108318)-380)/380
-                s = s..t.." "
-                t = (mem:read_i16(0x108320)-128)/128
-                s = s..t.." "
-
-                --爆气
+                --2p爆气
                 t = mem:read_i8(0x1083E0)//16
                 s = s..t.." "
                 

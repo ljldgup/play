@@ -8,7 +8,7 @@ from tensorflow.keras import layers
 from tensorflow.python.keras import Model
 from tensorflow.python.keras.optimizers import Adam
 
-from kof.shared_model import build_attention_model
+from kof.shared_model import build_multi_attention_model
 
 '''
 可调参数
@@ -46,7 +46,7 @@ class DoubleDQN(KofAgent):
 
     def build_model(self):
         # shared_model = self.build_shared_model()
-        shared_model = build_attention_model(self.input_steps, self.action_num)
+        shared_model = build_multi_attention_model(self.input_steps)
         t_status = shared_model.output
         output = layers.Dense(self.action_num, kernel_initializer='he_uniform')(t_status)
         model = Model(shared_model.input, output, name=self.model_name)
@@ -162,7 +162,7 @@ class DuelingDQN(DoubleDQN):
 
     def build_model(self):
         # shared_model = self.build_shared_model()
-        shared_model = build_attention_model(self.input_steps, self.action_num)
+        shared_model = build_multi_attention_model(self.input_steps)
         t_status = shared_model.output
 
         # 攻击动作，则采用基础标量 + 均值为0的向量策略
@@ -175,7 +175,7 @@ class DuelingDQN(DoubleDQN):
         q = layers.Add()([value, advantage])
         model = Model(shared_model.input, q, name=self.model_name)
 
-        model.compile(optimizer=Adam(lr=0.00001), loss='mse')
+        model.compile(optimizer=Adam(lr=0.000001), loss='mse')
 
         return model
 
@@ -184,17 +184,19 @@ def train_model(model, folders):
     print('-----------------------------')
     print('train ', model.model_name)
     # 在刚开始训练网络的时候使用
-    model.multi_steps = 6
+    model.multi_steps = 2
     for i in folders:
         try:
             print('train ', i)
             # model.train_model(i)
-            model.train_model(i, epochs=60)
+            model.train_model(i, epochs=20)
             # 这种直接拷贝的效果和nature DQN其实没有区别。。所以放到外层去拷贝，训练时应该加大拷贝的间隔
             # 改成soft copy
-            model.soft_weight_copy()
+
         except:
             traceback.print_exc()
+        if i % 3:
+            model.weight_copy()
 
 
 if __name__ == '__main__':
@@ -205,13 +207,14 @@ if __name__ == '__main__':
     # model.model_test(2, [1,2])
     # model.predict_model.summary()
     # t = model.operation_analysis(5)
-    model.train_model(15, epochs=40)
+    # model.train_model(5, epochs=40)
+    train_model(model, range(1,10))
     model.weight_copy()
     model.save_model()
     model.value_test(15, [1])
 
     '''
-    raw_env = model.raw_data_generate(15, [1])
+    raw_env = model.raw_data_generate(1, [1])
     train_env, train_index = model.train_env_generate(raw_env)
     train_reward, td_error, n_action = model.double_dqn_train_data(raw_env, train_env, train_index)
     # 这里100 对应的是 raw_env 中 100+input_steps左右位置
