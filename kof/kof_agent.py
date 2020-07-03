@@ -142,34 +142,36 @@ class KofAgent:
             role2_life_reward = raw_env['role2_life'].diff(-self.operation_interval).fillna(0)
             role2_life_reward[role2_life_reward < 0] = 0
 
-            # 这里避免新的一局开始，血量回满被误认为报酬
+            # 这里避免新的一局开始，血量回满被误认为报酬,在后面加输赢reward的时候已修正
             # life_reward[raw_env['time'].diff(1).fillna(1) > 0] = 0
 
             combo_reward = - raw_env['role1_combo_count'].diff(-self.operation_interval).fillna(0)
 
             # 防守的收益
-            # guard_reward = -raw_env['guard_value'].diff(self.operation_interval).fillna(0)
-            # guard_reward = guard_reward.map(lambda x: x if x > 0 else 0)
+            guard_reward = -raw_env['role1_guard_value'].diff(-self.operation_interval).fillna(0)
+            # 破防值回复不算
+            guard_reward = guard_reward.map(lambda x: x if x > 0 else 0)
 
             # 值要在[-1，1]左右,reward_sum太小反而容易过估计
-            raw_env['raw_reward'] = role2_life_reward - role1_life_reward + combo_reward
+            # 这里自己的生命更加重要
+            raw_env['raw_reward'] = role2_life_reward / 1.2 - role1_life_reward + combo_reward / 3 + guard_reward / 5
             raw_env['reward'] = raw_env['raw_reward'] / 50
 
             # 当前步的reward实际上是上一步的，我一直没有上移，这是个巨大的错误
             # raw_env['reward'] = raw_env['reward'].shift(-1).fillna(0)
             # 这个地方应该是错误的，因为diff就是当前和之后的差，就是当前action的reward，所以应该不需要再移动
 
-            '''
             # 根据胜负增加额外的报酬,pandas不允许切片或者搜索赋值，只能先这样
-            end_index = (raw_env[raw_env[raw_env['action'] != 0]['time'].diff(1).shift(-1).fillna(1) > 0]).index
+            t = raw_env[raw_env['action'] > 0]
+            end_index = (t[t['time'].diff(1).shift(-1).fillna(1) > 0]).index
 
             for idx in end_index:
                 # 这里暂时不明白为什么是loc,我是按索引取得，按理应该是iloc
-                if raw_env.loc[idx]['role1_life'] > raw_env.loc[idx]['role2_life']:
-                    raw_env.loc[idx]['reward'] = 0.5
-                else:
-                    raw_env.loc[idx]['reward'] = -0.5
-            '''
+                if raw_env.loc[idx]['role1_life'] > raw_env.loc[idx]['role2_life'] and raw_env.loc[idx]['reward'] < 1:
+                    raw_env.loc[idx]['reward'] = 1
+                elif raw_env.loc[idx]['role1_life'] < raw_env.loc[idx]['role2_life'] and raw_env.loc[idx][
+                    'reward'] > -1:
+                    raw_env.loc[idx]['reward'] = -1
 
             # r值裁剪
             raw_env['reward'][raw_env['reward'] > 2] = 2
@@ -244,6 +246,7 @@ class KofAgent:
         raw_env = self.raw_data_generate(folder, round_nums)
         train_env, train_index = self.train_env_generate(raw_env)
         train_target, td_error, action = self.train_reward_generate(raw_env, train_env, train_index)
+        old_r = self.predict_model.predict([env for env in train_env])
         sum_tree = SumTree(abs(td_error))
         loss_history = []
         print('train with sum tree {}/{} {} epochs'.format(folder, round_nums, epochs))
@@ -256,6 +259,16 @@ class KofAgent:
             print(loss / (len(train_index) // batch_size))
 
         self.record['total_epochs'] += epochs
+
+
+        '''
+        # 测试训练完后概率变化程度
+        new_r = self.predict_model.predict([env for env in train_env])
+        for o, n, td in zip(old_r[range(len(action[1])), action[1]],
+                                     new_r[range(len(action[1])), action[1]],
+                                     td_error):
+            print(o, n, td)
+        '''
         return loss_history
 
     def save_model(self):
@@ -355,7 +368,7 @@ class KofAgent:
 
         raw_env['num'] = raw_env['num'].astype('int')
         raw_env['action'] = raw_env['action'].astype('int')
-
+        raw_env = raw_env[raw_env['action'] > 0]
         # 注意这里对num，action进行聚类，之后他们都在层次化索引上
         # 所以需要unstack，将action移到列名,才能绘制出按文件名分开的柱状体
         reward_chart = raw_env.groupby(['action', 'num']).sum()['reward'].unstack().plot.bar(title='reward')

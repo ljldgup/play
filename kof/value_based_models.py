@@ -37,7 +37,7 @@ data_dir = os.getcwd()
 # 接近BN层貌似一定程度上会导致过估计，所以暂时删掉
 class DoubleDQN(KofAgent):
 
-    def __init__(self, role, model_name='double_dqn', reward_decay=0.94):
+    def __init__(self, role, model_name='double_dqn', reward_decay=0.92):
         super().__init__(role=role, model_name=model_name, reward_decay=reward_decay)
         # 把target_model移到value based文件中,因为policy based不需要
         self.target_model = self.build_model()
@@ -152,12 +152,20 @@ class DoubleDQN(KofAgent):
         ax1.hist(ans.flatten(), bins=30, label=self.model_name)
         fig1.legend()
 
+        fig2 = plt.figure()
+        for i in range(self.action_num):
+            ax1 = fig2.add_subplot(4, 4, i + 1)
+            ax1.hist(ans[:, i], bins=20)
+            fig2.legend()
+
+        self.critic.value_test(folder, round_nums)
+
 
 # 正常dueling dqn
 # 将衰减降低至0.94，去掉了上次动作输入，将1p embedding带宽扩展到8，后效果比之前好了很多
 # 但动作比较集中
 class DuelingDQN(DoubleDQN):
-    def __init__(self, role, model_name='dueling_dqn', reward_decay=0.94):
+    def __init__(self, role, model_name='dueling_dqn', reward_decay=0.92):
         super().__init__(role=role, model_name=model_name, reward_decay=reward_decay)
 
     def build_model(self):
@@ -175,7 +183,7 @@ class DuelingDQN(DoubleDQN):
         q = layers.Add()([value, advantage])
         model = Model(shared_model.input, q, name=self.model_name)
 
-        model.compile(optimizer=Adam(lr=0.000001), loss='mse')
+        model.compile(optimizer=Adam(lr=0.00001), loss='mse')
 
         return model
 
@@ -207,11 +215,11 @@ if __name__ == '__main__':
     # model.model_test(2, [1,2])
     # model.predict_model.summary()
     # t = model.operation_analysis(5)
-    # model.train_model(5, epochs=40)
-    train_model(model, range(1,10))
-    model.weight_copy()
-    model.save_model()
-    model.value_test(15, [1])
+    model.train_model(5, [1], epochs=40)
+    # train_model(model, range(1, 10))
+    # model.weight_copy()
+    # model.save_model()
+    # model.value_test(1, [1])
 
     '''
     raw_env = model.raw_data_generate(1, [1])
@@ -222,7 +230,6 @@ if __name__ == '__main__':
     # output = model.output_test([ev[50].reshape(1, *ev[50].shape) for ev in train_env])
     # train_reward[range(len(n_action[1])), n_action[1]]
     # model.model_test(1, [1])
-
 
     # 查看训练数据是否对的上
     index = 65

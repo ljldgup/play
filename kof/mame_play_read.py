@@ -94,7 +94,7 @@ def train_on_mame(model, train=True, round_num=12):
                         model.e_greedy = 0.7 * count / round_num + 0.6
 
                         # 随着时间的增加，较少multi_steps
-                        model.multi_steps = 3 // count + 1
+                        model.multi_steps = 4 // count + 1
                     else:
                         model.e_greedy = 0.98
 
@@ -146,15 +146,15 @@ def train_on_mame(model, train=True, round_num=12):
 
 if __name__ == '__main__':
     # dqn_model = DoubleDQN('iori')
-    # dqn_model = PPO('iori')
-    dqn_model = DuelingDQN('iori')
+    dqn_model = PPO('iori')
+    # dqn_model = DuelingDQN('iori')
     # QuantileRegressionDQN有bug，会过估计，暂时不明白错误在哪里
     # dqn_model = QuantileRegressionDQN('iori')
     # dqn_model = DistributionalDQN('iori')
     # dqn_model = RandomAgent('iori')
     # model.load_model('1233')jj
     # model = random_model('kyo')
-    round_num = 14
+    round_num = 12
     folder_num = train_on_mame(dqn_model, True, round_num)
     # dqn_model.train_model(folder_num, epochs=20)
     dqn_model.save_model()

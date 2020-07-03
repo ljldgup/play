@@ -77,7 +77,7 @@ def multi_attention_layer_normalizaiton(x):
 
 
 def feed_forward_network_layer_normalization(x):
-    t_ans = layers.Dense(32, kernel_initializer='he_uniform', activation='relu')(x)
+    t_ans = layers.Dense(x.shape[-1], kernel_initializer='he_uniform', activation='relu')(x)
     t_ans = layers.Dense(x.shape[-1])(t_ans)
     ans = layers.LayerNormalization(epsilon=1e-6)(layers.Add()([x, t_ans]))
     return ans
@@ -120,7 +120,8 @@ def build_multi_attention_model(input_steps):
                        role1_baoqi_embedding, role2_baoqi_embedding]
 
     layers_output = []
-    # 安装transformer 去掉decoder输入，和xN的结构
+    #  按照transformer 去掉decoder的输入，和xN的结构，因为这里不是翻译句子，不需要输入被翻译的文字，并逐个翻译
+    # 后半部分加self-attention 把时间步压缩成1
     for layer in import_layers:
         # 这里输出维度和词嵌入维度相同，输出的形状batch_size, time_steps, embedding_size,与原来一样,便于加残差
         # PositionalEncoding 第二参数要和输入的最后一维相同
@@ -135,21 +136,19 @@ def build_multi_attention_model(input_steps):
 
     for layer in unimport_layers:
         pos_code = PositionalEncoding(input_steps, 64)(layer)
+
         t = multi_attention_layer_normalizaiton(pos_code)
         t = feed_forward_network_layer_normalization(t)
+
         t = multi_attention_layer_normalizaiton(t)
         t = feed_forward_network_layer_normalization(t)
-
+        # 用普通attention把十个时间步压成一个
         t = layers.Flatten()(Attention()(t))
         layers_output.append(t)
 
     t_status = layers.concatenate(layers_output)
 
     t_status = layers.Dense(512, kernel_initializer='he_uniform')(t_status)
-    t_status = layers.BatchNormalization()(t_status)
-    t_status = layers.LeakyReLU(0.05)(t_status)
-
-    t_status = layers.Dense(256)(t_status)
     output = layers.LeakyReLU(0.05)(t_status)
 
     shared_model = Model([role1_actions, role2_actions, role1_energy, role2_energy,
