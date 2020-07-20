@@ -11,7 +11,7 @@ from kof.distributional_dqn import DistributionalDQN, QuantileRegressionDQN
 from kof.kof_agent import RandomAgent
 from kof.policy_based_model import ActorCritic, PPO, DDPG
 from kof.value_based_models import DoubleDQN, DuelingDQN
-from kof.kof_command_mame import operation, restart, simulate
+from kof.kof_command_mame import operation, restart, global_set, get_action_num
 
 '''
 mame.ini keyboardprovider设置成win32不然无法接受键盘输入
@@ -39,7 +39,18 @@ def train_on_mame(model, train=True, round_num=12):
     print('数据目录：{}'.format(data_dir))
     os.mkdir(data_dir)
     with open(data_dir + '/' + model.model_name, 'w') as f:
-        f.write(str(time.asctime(time.localtime(time.time()))))
+        f.writelines([str(time.asctime(time.localtime(time.time()))) + '\n',
+                      model.model_name + '\n',
+                      model.network_type + '\n',
+                      'reward_scale_factor {}\n'.format(model.reward_scale_factor),
+                      'copy interval {}\n'.format(model.copy_interval),
+                      'input steps {}\n'.format(model.input_steps),
+                      'action num {}\n'.format(model.action_num),
+                      'reward decay {}\n'.format(model.reward_decay),
+                      'learning rate {}\n'.format(model.lr),
+                      'multisteps {}\n'.format(model.multi_steps)]
+                     )
+        f.write(str(model.record))
 
     # 临时存放数据
     tmp_action = []
@@ -71,7 +82,7 @@ def train_on_mame(model, train=True, round_num=12):
                             record_file = '{}.'.format(int(count))
                             np.savetxt(data_dir + '/' + record_file + 'act', np.array(tmp_action))
                             np.savetxt(data_dir + '/' + record_file + 'env', np.array(tmp_env))
-
+                            # 查看刚刚动作对不对
                             # model.model_test(folder_num, [count])
                             if train:
                                 model.train_model(folder_num, [count], epochs=epochs)
@@ -91,10 +102,12 @@ def train_on_mame(model, train=True, round_num=12):
                         # multi_steps 逐渐较少到1，起一定的修正效果， e_greedy增大至1
                         # model.multi_steps = 4 // count + 1
                         # model.e_greedy = -1 / (count + 1) + 1.1
-                        model.e_greedy = 0.7 * count / round_num + 0.6
+                        # 随机生成e_greedy
+                        # 99.7% [-3*sigma,3*sigma] 95.4% [-2*sigma,2*sigma], 68.3% [-sigma,sigma]
+                        model.e_greedy = 0.92 + 0.03 * np.random.randn()
 
                         # 随着时间的增加，较少multi_steps
-                        model.multi_steps = 4 // count + 1
+                        # model.multi_steps = 3 // count + 1
                     else:
                         model.e_greedy = 0.98
 
@@ -114,7 +127,7 @@ def train_on_mame(model, train=True, round_num=12):
                             keys = model.choose_action(None, random_choose=True)
                         else:
                             keys = model.choose_action(np.array([tmp_env[-model.input_steps:]]), random_choose=False)
-
+                        # print(keys)
                         # 按键采用一个新的线程执行，其他部分在主线程中进行，避免顺序混乱
                         # 1p 在右边
                         if data[4] > data[6]:
@@ -145,20 +158,23 @@ def train_on_mame(model, train=True, round_num=12):
 
 
 if __name__ == '__main__':
+    role = 'iori'
+
+    global_set(role)
     # dqn_model = DoubleDQN('iori')
-    dqn_model = PPO('iori')
-    # dqn_model = DuelingDQN('iori')
+    # dqn_model = PPO('iori')
+    dqn_model = DuelingDQN(role, get_action_num(role))
     # QuantileRegressionDQN有bug，会过估计，暂时不明白错误在哪里
     # dqn_model = QuantileRegressionDQN('iori')
     # dqn_model = DistributionalDQN('iori')
     # dqn_model = RandomAgent('iori')
-    # model.load_model('1233')jj
+    # model.load_model('1233')
     # model = random_model('kyo')
-    round_num = 12
+    round_num = 10
     folder_num = train_on_mame(dqn_model, True, round_num)
     # dqn_model.train_model(folder_num, epochs=20)
     dqn_model.save_model()
 
     dqn_model.operation_analysis(folder_num)
-    dqn_model.value_test(folder_num, [1])
     dqn_model.model_test(folder_num, [round_num])
+    dqn_model.value_test(folder_num, [1])

@@ -3,29 +3,33 @@ import traceback
 import numpy as np
 from tensorflow.keras import backend as K
 from matplotlib import pyplot as plt
-from kof.kof_agent import KofAgent
+from kof.kof_agent import KofAgent, train_model_1by1
 from tensorflow.keras import layers
 from tensorflow.python.keras import Model
 from tensorflow.python.keras.optimizers import Adam
 
-from kof.shared_model import build_multi_attention_model
+from kof.kof_command_mame import get_action_num
+from kof.shared_model import build_multi_attention_model, build_rnn_attention_model, build_stacked_rnn_model
 
 '''
-可调参数
-输入
-网络结构：距离,坐标先卷积再输入rnn效果更好
-衰减因子:不能太大，或者太小，0.95左右
-reward比例:不能太小，不然难以收敛
-输入步数
-学习率 过大的话学习效果很不好，小一点容易找到稳定的策略
+可调的点
 
+网络结构：距离,坐标先卷积再输入rnn效果更好，使用堆叠rnn，rnn+attention, transformer 效果不同
+衰减因子:不能太大，或者太小，0.95左右
+reward比例:不能太小或者太大都容易过估计，reward 从30 扩大到60，效果很明显变差20-10效果也变差
+输入步数：输入步数从10减小到6之后有明显的进步，6到4效果又变差
+学习率： 过大的话学习效果很不好，小一点容易找到稳定的策略，可以根据前后策略变化情况来看
+输出空间:不宜过大，不然很难找到稳定的策略
+拷贝间隔:不宜过小，否则容易过估计
+多步学习：
+目前测出来比较有效的，rnn堆叠，衰减因子0.99，缩放比例30-20，输入步数6，学习率1e-6 - 1e-5，输出空间<15
 改进点：
-残差网络
-transformer
+可以考虑把采样过程加入到网络结果，把预测和训练模型分开，这样可以加快即时速度
 
 减小过估计的几个注意点
 经过一定计算后再更新target模型，不是每次训练后都加入，这点最重要
-reward注意不要计入多余的值, reward的范围不能太大，大约在大约在0.5左右
+reward注意不要计入多余的值, reward的范围不能太大太小，在±0.1-1左右
+使用bn层也会造成很明显的过估计
 '''
 
 data_dir = os.getcwd()
@@ -37,28 +41,27 @@ data_dir = os.getcwd()
 # 接近BN层貌似一定程度上会导致过估计，所以暂时删掉
 class DoubleDQN(KofAgent):
 
-    def __init__(self, role, model_name='double_dqn', reward_decay=0.92):
-        super().__init__(role=role, model_name=model_name, reward_decay=reward_decay)
+    def __init__(self, role, action_num, model_name='double_dqn', reward_decay=0.99):
+
+        super().__init__(role=role, action_num=action_num, model_name=model_name, reward_decay=reward_decay)
         # 把target_model移到value based文件中,因为policy based不需要
-        self.target_model = self.build_model()
-        self.target_model.set_weights(self.predict_model.get_weights())
         self.train_reward_generate = self.double_dqn_train_data
 
     def build_model(self):
-        # shared_model = self.build_shared_model()
-        shared_model = build_multi_attention_model(self.input_steps)
+        shared_model = build_stacked_rnn_model(self)
+        # shared_model = build_multi_attention_model(self.input_steps)
         t_status = shared_model.output
         output = layers.Dense(self.action_num, kernel_initializer='he_uniform')(t_status)
         model = Model(shared_model.input, output, name=self.model_name)
 
-        model.compile(optimizer=Adam(lr=0.00001), loss='mse')
+        model.compile(optimizer=Adam(lr=self.lr), loss='mse')
 
         return model
 
     # 每次训练完就直接跟新target的参数就是nature dqn
     def double_dqn_train_data(self, raw_env, train_env, train_index):
-        reward = raw_env['reward'].reindex(train_index)
-        action = raw_env['action'].reindex(train_index)
+        reward = raw_env['reward'].reindex(train_index).values
+        action = raw_env['action'].reindex(train_index).values
         action = action.astype('int')
 
         target_model_prediction = self.target_model.predict(train_env)
@@ -69,9 +72,8 @@ class DoubleDQN(KofAgent):
         # 由训练模型选动作，target模型根据动作估算q值，不关心是否最大
         # yj=Rj + γQ′(ϕ(S′j), argmaxa′Q(ϕ(S′j), a, w), w′)
         time = raw_env['time'].reindex(train_index).diff(1).shift(-1).fillna(1).values
-
-        next_max_reward_action = predict_model_prediction.argmax(axis=1)
-        next_q = target_model_prediction[range(len(train_index)), next_max_reward_action.astype('int')]
+        # 这里应该用采取的行为，如果采用过去的记录训练，这里预测值不是实际采取的值
+        next_q = target_model_prediction[range(len(train_index)), action]
         '''
         print(predict_model_prediction[range(20), action[:20]])
         print(reward.values[:20])
@@ -100,15 +102,13 @@ class DoubleDQN(KofAgent):
         reward += next_q * self.reward_decay ** self.multi_steps
 
         td_error = reward - predict_model_prediction[range(len(train_index)), action]
-        td_error = td_error.values
-
         # 这里报action过多很可能是人物不对
         predict_model_prediction[range(len(train_index)), action] = reward
 
         # 上下限裁剪，防止过估计
-        predict_model_prediction[predict_model_prediction > 2] = 2
-        predict_model_prediction[predict_model_prediction < -2] = -2
-        return [predict_model_prediction, td_error, [pre_actions, action.values]]
+        predict_model_prediction[predict_model_prediction > 1] = 1
+        predict_model_prediction[predict_model_prediction < -1] = -1
+        return [predict_model_prediction, td_error, [pre_actions, action]]
 
     def train_model(self, folder, round_nums=[], batch_size=64, epochs=30):
         self.train_model_with_sum_tree(folder, round_nums, batch_size, epochs)
@@ -133,7 +133,7 @@ class DoubleDQN(KofAgent):
 
     def value_test(self, folder, round_nums):
         # q值分布可视化
-        raw_env = self.raw_data_generate(folder, round_nums)
+        raw_env = self.raw_env_generate(folder, round_nums)
         train_env, train_index = self.train_env_generate(raw_env)
         ans = self.predict_model.predict(train_env)
         # 这里是训练数据但是也可以拿来参考,查看是否过估计，目前所有的模型几乎都会过估计
@@ -165,25 +165,26 @@ class DoubleDQN(KofAgent):
 # 将衰减降低至0.94，去掉了上次动作输入，将1p embedding带宽扩展到8，后效果比之前好了很多
 # 但动作比较集中
 class DuelingDQN(DoubleDQN):
-    def __init__(self, role, model_name='dueling_dqn', reward_decay=0.92):
-        super().__init__(role=role, model_name=model_name, reward_decay=reward_decay)
+    def __init__(self, role, action_num, model_name='dueling_dqn', reward_decay=0.99):
+        super().__init__(role=role, action_num=action_num, model_name=model_name, reward_decay=reward_decay)
 
     def build_model(self):
-        # shared_model = self.build_shared_model()
-        shared_model = build_multi_attention_model(self.input_steps)
+        shared_model = build_stacked_rnn_model(self)
+        # shared_model = build_rnn_attention_model(self)
+        # shared_model = build_multi_attention_model(self)
         t_status = shared_model.output
 
         # 攻击动作，则采用基础标量 + 均值为0的向量策略
         value = layers.Dense(1)(t_status)
         # 这力可以直接广播，不需要拼接
-        # value = concatenate([value] * self.action_num)
+        #         # value = concatenate([value] * self.action_num)
         a = layers.Dense(self.action_num)(t_status)
         mean = layers.Lambda(lambda x: K.mean(x, axis=1, keepdims=True))(a)
         advantage = layers.Subtract()([a, mean])
         q = layers.Add()([value, advantage])
         model = Model(shared_model.input, q, name=self.model_name)
 
-        model.compile(optimizer=Adam(lr=0.00001), loss='mse')
+        model.compile(optimizer=Adam(lr=self.lr), loss='mse')
 
         return model
 
@@ -197,7 +198,7 @@ def train_model(model, folders):
         try:
             print('train ', i)
             # model.train_model(i)
-            model.train_model(i, epochs=20)
+            train_model_1by1(model, i, range(10))
             # 这种直接拷贝的效果和nature DQN其实没有区别。。所以放到外层去拷贝，训练时应该加大拷贝的间隔
             # 改成soft copy
 
@@ -209,18 +210,10 @@ def train_model(model, folders):
 
 if __name__ == '__main__':
     # models = [DuelingDQN('iori'), DoubleDQN('iori')]
-    model = DuelingDQN('iori')
-
-    # model.model_test(1, [1,2])
-    # model.model_test(2, [1,2])
-    # model.predict_model.summary()
-    # t = model.operation_analysis(5)
-    model.train_model(5, [1], epochs=40)
-    # train_model(model, range(1, 10))
-    # model.weight_copy()
-    # model.save_model()
-    # model.value_test(1, [1])
-
+    model = DuelingDQN('iori', get_action_num('iori'))
+    train_model_1by1(model, range(1, 4), range(1, 11))
+    model.save_model()
+    # t = model.operation_analysis(1)
     '''
     raw_env = model.raw_data_generate(1, [1])
     train_env, train_index = model.train_env_generate(raw_env)
@@ -230,7 +223,7 @@ if __name__ == '__main__':
     # output = model.output_test([ev[50].reshape(1, *ev[50].shape) for ev in train_env])
     # train_reward[range(len(n_action[1])), n_action[1]]
     # model.model_test(1, [1])
-
+    # t = model.operation_analysis(5)
     # 查看训练数据是否对的上
     index = 65
     train_index[index], raw_env['action'].reindex(train_index).values[index], raw_env['reward'].reindex(

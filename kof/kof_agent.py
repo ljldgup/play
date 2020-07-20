@@ -31,14 +31,18 @@ class RandomAgent:
 
 
 data_dir = os.getcwd()
-env_colomn = ['role1_action', 'role2_action',
-              'role1_energy', 'role2_energy',
-              'role1_position_x', 'role1_position_y',
-              'role2_position_x', 'role2_position_y', 'role1_baoqi', 'role2_baoqi', 'role1', 'role2',
-              'role1_guard_value',
-              'role1_combo_count',
-              'role1_life', 'role2_life',
-              'time', 'coins', ]
+env_colomns = ['role1_action', 'role2_action',
+               'role1_energy', 'role2_energy',
+               'role1_position_x', 'role1_position_y',
+               'role2_position_x', 'role2_position_y', 'role1_baoqi', 'role2_baoqi', 'role1', 'role2',
+               'role1_guard_value',
+               'role1_combo_count',
+               'role1_life', 'role2_life',
+               'time', 'coins', ]
+input_colomns = ['role1_action', 'role2_action',
+                 'role1_energy', 'role2_energy',
+                 'role1_position_x', 'role1_position_y',
+                 'role2_position_x', 'role2_position_y', 'role1_baoqi', 'role2_baoqi']
 
 
 # 选择效果比较好，即文件比较大的记录
@@ -63,48 +67,52 @@ def train_model_1by1(model, folders, rounds):
             try:
                 print('train {}/{}'.format(i, r))
                 # model.train_model(i)
-                model.train_model(i, [r], epochs=30)
+                model.train_model(i, [r], epochs=15)
                 # 这种直接拷贝的效果和nature DQN其实没有区别。。所以放到外层去拷贝，训练时应该加大拷贝的间隔
                 # 改成soft copy
                 # model.soft_weight_copy()
                 count += 1
             except:
                 traceback.print_exc()
-            if count % 5 == 0:
+            if count % model.copy_interval == 0:
                 model.weight_copy()
     model.save_model()
 
 
+# 这里通过修改raw_env_generate，train_env_generate,empty_env，raw_env_data_to_input改变环境对应对应生成方式
+# 以及共享的模型，可以把KofAgent调整成为任何游戏的Agent
 class KofAgent:
-    def __init__(self, role, model_name,
-                 reward_decay=0.94,
-                 input_steps=10):
+    def __init__(self, role, model_name, action_num, reward_decay, input_steps=6):
         self.role = role
         self.model_name = model_name
+        self.action_num = action_num
         self.reward_decay = reward_decay
-        self.e_greedy = 0.95
-
         # 输入步数
         self.input_steps = input_steps
+        # 训练时会重置
+        self.e_greedy = 0
 
-        # 操作间隔步数
+        # 操作间隔时间步数
         self.operation_interval = 2
 
-        # multi_steps 配合decay使网络趋向真实数据，但这样波动大
+        # multi_steps 配合decay使网络趋向真实数据，但multi_steps加大会导致r波动大
         # 这里调大了间隔后，multi_steps应该减小一些
-        self.multi_steps = 3
+        self.multi_steps = 1
 
         # 模型参数拷贝间隔
-        self.copy_interval = 6
-
-        global_set(role)
-        self.action_num = len(role_commands[role])
+        self.copy_interval = 5
+        # reward 缩减比例
+        self.reward_scale_factor = 30
+        # 学习率
+        self.lr = 1e-7
+        # build_model由子类提供
         self.predict_model = self.build_model()
-        self.record = self.get_record()
+        self.target_model = self.build_model()
+        self.target_model.set_weights(self.predict_model.get_weights())
 
-        if os.path.exists('{}/model/{}_{}.index'.format(data_dir, self.role, self.model_name)):
-            print('load model {}'.format(self.role))
+        if os.path.exists('{}/model/{}_{}_{}_record'.format(data_dir, self.role, self.model_name, self.network_type)):
             self.load_model()
+            self.record = self.get_record()
 
     def choose_action(self, raw_data, random_choose=False):
         if random_choose or random.random() > self.e_greedy:
@@ -114,7 +122,7 @@ class KofAgent:
             return self.predict_model.predict(self.raw_env_data_to_input(raw_data)).argmax()
 
     # 读入round_nums文件下的文件，并计算reward
-    def raw_data_generate(self, folder, round_nums):
+    def raw_env_generate(self, folder, round_nums):
         if round_nums:
             if os.path.exists('{}/{}/{}.env'.format(data_dir, folder, round_nums[0])):
                 raw_env = np.loadtxt('{}/{}/{}.env'.format(data_dir, folder, round_nums[0]))
@@ -130,7 +138,7 @@ class KofAgent:
                                                   np.loadtxt(
                                                       '{}/{}/{}.act'.format(data_dir, folder, round_nums[i]))])
 
-            raw_env = pd.DataFrame(raw_env, columns=env_colomn)
+            raw_env = pd.DataFrame(raw_env, columns=env_colomns)
             raw_env['action'] = raw_actions
             # 筛选时间在流动的列
             raw_env = raw_env[raw_env['time'].diff(1).fillna(0) != 0]
@@ -145,17 +153,17 @@ class KofAgent:
             # 这里避免新的一局开始，血量回满被误认为报酬,在后面加输赢reward的时候已修正
             # life_reward[raw_env['time'].diff(1).fillna(1) > 0] = 0
 
-            combo_reward = - raw_env['role1_combo_count'].diff(-self.operation_interval).fillna(0)
+            # combo_reward = - raw_env['role1_combo_count'].diff(-self.operation_interval).fillna(0)
 
             # 防守的收益
-            guard_reward = -raw_env['role1_guard_value'].diff(-self.operation_interval).fillna(0)
+            # guard_reward = -raw_env['role1_guard_value'].diff(-self.operation_interval).fillna(0)
             # 破防值回复不算
-            guard_reward = guard_reward.map(lambda x: x if x > 0 else 0)
+            # guard_reward = guard_reward.map(lambda x: x if x > 0 else 0)
 
             # 值要在[-1，1]左右,reward_sum太小反而容易过估计
-            # 这里自己的生命更加重要
-            raw_env['raw_reward'] = role2_life_reward / 1.2 - role1_life_reward + combo_reward / 3 + guard_reward / 5
-            raw_env['reward'] = raw_env['raw_reward'] / 50
+            # 这里自己的生命更加重要,对方生命进行缩放
+            raw_env['raw_reward'] = role2_life_reward - role1_life_reward
+            raw_env['reward'] = raw_env['raw_reward'] / self.reward_scale_factor
 
             # 当前步的reward实际上是上一步的，我一直没有上移，这是个巨大的错误
             # raw_env['reward'] = raw_env['reward'].shift(-1).fillna(0)
@@ -173,9 +181,9 @@ class KofAgent:
                     'reward'] > -1:
                     raw_env.loc[idx]['reward'] = -1
 
-            # r值裁剪
-            raw_env['reward'][raw_env['reward'] > 2] = 2
-            raw_env['reward'][raw_env['reward'] < -2] = -2
+            # r值裁剪,剪裁应该放到训练数据生成的地方
+            # raw_env['reward'][raw_env['reward'] > 2] = 2
+            # raw_env['reward'][raw_env['reward'] < -2] = -2
 
             return raw_env
 
@@ -188,11 +196,7 @@ class KofAgent:
         for index in raw_env['reward'][raw_env['action'] != -1].index:
             # 这里是loc取的数量是闭区间和python list不一样
             # guard_value不用，放在这里先补齐
-            env = raw_env[['role1_action', 'role2_action',
-                           'role1_energy', 'role2_energy',
-                           'role1_position_x', 'role1_position_y',
-                           'role2_position_x', 'role2_position_y', 'role1_baoqi', 'role2_baoqi']].loc[
-                  index - self.input_steps + 1:index]
+            env = raw_env[input_colomns].loc[index - self.input_steps + 1:index]
 
             # 去掉结尾
             if len(env) != self.input_steps or \
@@ -226,10 +230,9 @@ class KofAgent:
         if not round_nums:
             round_nums = get_maxsize_file(folder)
 
-        raw_env = self.raw_data_generate(folder, round_nums)
+        raw_env = self.raw_env_generate(folder, round_nums)
         train_env, train_index = self.train_env_generate(raw_env)
         train_target, td_error, action = self.train_reward_generate(raw_env, train_env, train_index)
-
         random_index = np.random.permutation(len(train_index))
         # verbose参数控制输出，这里每个epochs输出一次
         self.predict_model.fit([env[random_index] for env in train_env], train_target[random_index],
@@ -243,7 +246,7 @@ class KofAgent:
         if not round_nums:
             round_nums = get_maxsize_file(folder)
 
-        raw_env = self.raw_data_generate(folder, round_nums)
+        raw_env = self.raw_env_generate(folder, round_nums)
         train_env, train_index = self.train_env_generate(raw_env)
         train_target, td_error, action = self.train_reward_generate(raw_env, train_env, train_index)
         old_r = self.predict_model.predict([env for env in train_env])
@@ -260,7 +263,6 @@ class KofAgent:
 
         self.record['total_epochs'] += epochs
 
-
         '''
         # 测试训练完后概率变化程度
         new_r = self.predict_model.predict([env for env in train_env])
@@ -274,65 +276,16 @@ class KofAgent:
     def save_model(self):
         if not os.path.exists('{}/model'.format(data_dir)):
             os.mkdir('{}/model'.format(data_dir))
-        self.predict_model.save_weights('{}/model/{}_{}'.format(data_dir, self.role, self.model_name))
+        self.predict_model.save_weights(
+            '{}/model/{}_{}_{}'.format(data_dir, self.role, self.model_name, self.network_type))
 
-        with open('{}/model/{}_{}_record'.format(data_dir, self.role, self.model_name), 'w') as r:
+        with open('{}/model/{}_{}_{}_record'.format(data_dir, self.role, self.model_name, self.network_type), 'w') as r:
             r.write(str(self.record))
 
     def load_model(self):
-        self.predict_model.load_weights('{}/model/{}_{}'.format(data_dir, self.role, self.model_name))
-
-    # 模型输入+lstm的公用部分
-    def build_shared_model(self):
-        role1_actions = Input(shape=(self.input_steps,), name='role1_actions')
-        role2_actions = Input(shape=(self.input_steps,), name='role2_actions')
-        role1_actions_embedding = layers.Embedding(512, 8, name='role1_actions_embedding')(role1_actions)
-        role2_actions_embedding = layers.Embedding(512, 8, name='role2_actions_embedding')(role2_actions)
-
-        role1_energy = Input(shape=(1,), name='role1_energy')
-        role1_energy_embedding = layers.Embedding(5, 2, name='role1_energy_embedding')(role1_energy)
-        role2_energy = Input(shape=(1,), name='role2_energy')
-        role2_energy_embedding = layers.Embedding(5, 2, name='role2_energy_embedding')(role2_energy)
-
-        role1_baoqi = Input(shape=(1,), name='role1_baoqi')
-        role1_baoqi_embedding = layers.Embedding(2, 1, name='role1_baoqi_embedding')(role1_baoqi)
-        role2_baoqi = Input(shape=(1,), name='role2_baoqi')
-        role2_baoqi_embedding = layers.Embedding(2, 1, name='role2_baoqi_embedding')(role2_baoqi)
-
-        role1_x_y = Input(shape=(self.input_steps, 2), name='role1_x_y')
-        role2_x_y = Input(shape=(self.input_steps, 2), name='role2_x_y')
-
-        role_position = concatenate([role1_x_y, role2_x_y])
-        role_position = BatchNormalization()(role_position)
-
-        role_distance = layers.Subtract()([role1_x_y, role2_x_y])
-        role_distance = BatchNormalization()(role_distance)
-
-        # 使用attention模型
-        time_related_layers = [role1_actions_embedding, role_position, role_distance,
-                               role2_actions_embedding]
-        lstm_output = []
-
-        # 理论上在self attention外面包一层 rnn就是attention，这边暂时这么干
-        for layer in time_related_layers:
-            t = CuDNNLSTM(256)(layer)
-            lstm_output.append(t)
-        t_status = layers.concatenate(lstm_output)
-
-        t_status = layers.Dense(512, kernel_initializer='he_uniform')(t_status)
-        t_status = BatchNormalization()(t_status)
-        t_status = layers.LeakyReLU(0.05)(t_status)
-
-        # 曝气应该是个综合性影响，所以直接加在最后
-        t_status = layers.concatenate(
-            [t_status, K.squeeze(role1_baoqi_embedding, 1), K.squeeze(role2_baoqi_embedding, 1),
-             K.squeeze(role1_energy_embedding, 1),
-             K.squeeze(role2_energy_embedding, 1)])
-
-        shared_model = Model([role1_actions, role2_actions, role1_energy, role2_energy,
-                              role1_x_y, role2_x_y, role1_baoqi, role2_baoqi], t_status)
-        # 这里模型不能编译，不然后面无法扩充
-        return shared_model
+        print('load {}/model/{}_{}_{}'.format(data_dir, self.role, self.model_name, self.network_type))
+        self.predict_model.load_weights(
+            '{}/model/{}_{}_{}'.format(data_dir, self.role, self.model_name, self.network_type))
 
     # 游戏运行时把原始环境输入，分割成模型能接受的输入，在具体的模型可以修改
     def raw_env_data_to_input(self, raw_data):
@@ -346,8 +299,9 @@ class KofAgent:
         return [[], [], [], [], [], [], [], []]
 
     def get_record(self):
-        if os.path.exists('{}/model/{}_{}_record'.format(data_dir, self.role, self.model_name)):
-            with open('{}/model/{}_{}_record'.format(data_dir, self.role, self.model_name), 'r') as r:
+        if os.path.exists('{}/model/{}_{}_{}_record'.format(data_dir, self.role, self.model_name, self.network_type)):
+            with open('{}/model/{}_{}_{}_record'.format(data_dir, self.role, self.model_name, self.network_type),
+                      'r') as r:
                 record = eval(r.read())
         else:
             record = {'total_epochs': 0, 'begin_time': time.asctime(time.localtime(time.time()))}
@@ -359,24 +313,25 @@ class KofAgent:
         data_files = filter(lambda f: '.' in f, files)
         round_nums = list(set([file.split('.')[0] for file in data_files]))
 
-        raw_env = self.raw_data_generate(folder, [round_nums[0]])
+        raw_env = self.raw_env_generate(folder, [round_nums[0]])
         raw_env['num'] = round_nums[0]
         for i in range(1, len(round_nums)):
-            t = self.raw_data_generate(folder, [round_nums[i]])
+            t = self.raw_env_generate(folder, [round_nums[i]])
             t['num'] = round_nums[i]
             raw_env = pd.concat([raw_env, t])
 
         raw_env['num'] = raw_env['num'].astype('int')
         raw_env['action'] = raw_env['action'].astype('int')
         raw_env = raw_env[raw_env['action'] > 0]
-        # 注意这里对num，action进行聚类，之后他们都在层次化索引上
-        # 所以需要unstack，将action移到列名,才能绘制出按文件名分开的柱状体
-        reward_chart = raw_env.groupby(['action', 'num']).sum()['reward'].unstack().plot.bar(title='reward')
+        reward_chart = raw_env.groupby(['num']).sum()['reward'].plot.line(title='reward')
         # 调整图例
         # reward_chart.legend(loc='right')
         reward_chart.legend(bbox_to_anchor=(1.0, 1.0))
-        # 注意这里groupby(['action', 'num']) 后结果任然是有很多列，打印的时候看不出来，但操作会出错
-        # 因为count()，可以随意取一列
+
+        # 这里对num，action进行聚类，之后他们都在层次化索引上
+        # 所以需要unstack，将action移到列名,才能绘制出按文件名分开的柱状体
+        # 这里groupby(['action', 'num']) 后结果任然是有很多列，打印的时候看不出来，但操作会出错
+        # count()，可以随意取一列
         action_count = raw_env.groupby(['action', 'num']).count()['reward'].unstack().fillna(0)
 
         # action_count 进行unstack后是Dataframe，action_total则是Series
@@ -391,13 +346,14 @@ class KofAgent:
     # 模型更新后就不准了
     def model_test(self, folder, round_nums):
         # 确定即时预测与回放的效果是一致的
-        raw_env = self.raw_data_generate(folder, round_nums)
+        raw_env = self.raw_env_generate(folder, round_nums)
         train_env, train_index = self.train_env_generate(raw_env)
         train_reward, td_error, n_action = self.train_reward_generate(raw_env, train_env, train_index)
 
         # 检验后期生成的数据和当时采取的动作是否一样，注意比较的时候e_greedy 要设置成1,模型要没被训练过
         print(np.array(n_action[1]) == np.array(n_action[0]))
         # print(np.array(n_action[1]))
+        # print(train_reward.max())
 
     # 输出测试，发现SeparableConv1D输出为及其稀疏,以及全连接层及其稀疏
     def output_test(self, data):

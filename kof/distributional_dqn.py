@@ -173,7 +173,7 @@ class DistributionalDQN(DoubleDQN):
 
     def value_test(self, folder, round_nums):
         # q值分布可视化
-        raw_env = self.raw_data_generate(folder, round_nums)
+        raw_env = self.raw_env_generate(folder, round_nums)
         train_env, train_index = self.train_env_generate(raw_env)
         train_reward, td_error, n_action = self.train_reward_generate(raw_env, train_env, train_index)
         train_reward_expection = np.sum(train_reward * self.rewards_values, axis=2)
@@ -286,7 +286,7 @@ class QuantileRegressionDQN(DoubleDQN):
 
     def value_test(self, folder, round_nums):
         # q值分布可视化
-        raw_env = self.raw_data_generate(folder, round_nums)
+        raw_env = self.raw_env_generate(folder, round_nums)
         train_env, train_index = self.train_env_generate(raw_env)
         train_reward, td_error, n_action = self.train_reward_generate(raw_env, train_env, train_index)
         train_reward_expection = np.sum(train_reward, axis=2)

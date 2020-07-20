@@ -52,10 +52,15 @@ function test()
                 s = s..mem:read_i8(0x1084E3).." "
 
                 --12p xy坐标,去除中心化，直接通过bn层进行处理
-                s = s..mem:read_i16(0X108118).." "
-                s = s..mem:read_i16(0x108120).." "
-                s = s..mem:read_i16(0X108318).." "
-                s = s..mem:read_i16(0x108320).." "
+                --12p xy坐标
+                t = (mem:read_i16(0X108118)-380)/380
+                s = s..t.." "
+                t = (mem:read_i16(0x108120)-128)/128
+                s = s..t.." "
+                t = (mem:read_i16(0X108318)-380)/380
+                s = s..t.." "
+                t = (mem:read_i16(0x108320)-128)/128
+                s = s..t.." "
                 
                 --1p曝气
                 t = mem:read_i8(0x1081E0)//16
