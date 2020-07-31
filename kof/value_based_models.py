@@ -1,13 +1,13 @@
 import os
 import traceback
 import numpy as np
+import tensorflow as tf
 from tensorflow.keras import backend as K
 from matplotlib import pyplot as plt
 from kof.kof_agent import KofAgent, train_model_1by1
 from tensorflow.keras import layers
 from tensorflow.python.keras import Model
-from tensorflow.python.keras.optimizers import Adam
-
+from tensorflow.keras.optimizers import Adam
 from kof.kof_command_mame import get_action_num
 from kof.shared_model import build_multi_attention_model, build_rnn_attention_model, build_stacked_rnn_model
 
@@ -28,12 +28,22 @@ reward比例:不能太小或者太大都容易过估计，reward 从30 扩大到
 
 减小过估计的几个注意点
 经过一定计算后再更新target模型，不是每次训练后都加入，这点最重要
+最后几层使用bn层也会造成很明显的过估计，目前加一层，不加几乎无法收敛,怀疑网络是否真的有效？？
 reward注意不要计入多余的值, reward的范围不能太大太小，在±0.1-1左右
-使用bn层也会造成很明显的过估计
+
+训练时可以对训练的值进行裁剪，裁剪区间对模型训练也有影响，区间太小，减小溢出值将成为网络主要梯度来源
+
 '''
 
 data_dir = os.getcwd()
 
+
+# 自定义损失，无关动作不提供梯度
+def dqn_loss(y_true, y_pred):
+    sign = tf.where(y_true == 0., 0., 1.)
+    delta = y_true - y_pred
+    loss = tf.reduce_mean(delta * delta * sign)
+    return loss
 
 # 普通DDQN，输出分开成多个fc，再合并
 # 这种方法违背网络共享信息的特点
@@ -41,9 +51,9 @@ data_dir = os.getcwd()
 # 接近BN层貌似一定程度上会导致过估计，所以暂时删掉
 class DoubleDQN(KofAgent):
 
-    def __init__(self, role, action_num, model_name='double_dqn', reward_decay=0.99):
+    def __init__(self, role, action_num, model_type='double_dqn'):
 
-        super().__init__(role=role, action_num=action_num, model_name=model_name, reward_decay=reward_decay)
+        super().__init__(role=role, action_num=action_num, model_type=model_type)
         # 把target_model移到value based文件中,因为policy based不需要
         self.train_reward_generate = self.double_dqn_train_data
 
@@ -52,9 +62,9 @@ class DoubleDQN(KofAgent):
         # shared_model = build_multi_attention_model(self.input_steps)
         t_status = shared_model.output
         output = layers.Dense(self.action_num, kernel_initializer='he_uniform')(t_status)
-        model = Model(shared_model.input, output, name=self.model_name)
+        model = Model(shared_model.input, output, name=self.model_type)
 
-        model.compile(optimizer=Adam(lr=self.lr), loss='mse')
+        model.compile(optimizer=Adam(lr=self.lr), loss=dqn_loss)
 
         return model
 
@@ -103,14 +113,16 @@ class DoubleDQN(KofAgent):
 
         td_error = reward - predict_model_prediction[range(len(train_index)), action]
         # 这里报action过多很可能是人物不对
-        predict_model_prediction[range(len(train_index)), action] = reward
-
+        train_reward = np.zeros_like(predict_model_prediction)
+        train_reward[range(len(train_index)), action] = reward
+        '''
         # 上下限裁剪，防止过估计
-        predict_model_prediction[predict_model_prediction > 1] = 1
-        predict_model_prediction[predict_model_prediction < -1] = -1
-        return [predict_model_prediction, td_error, [pre_actions, action]]
+        predict_model_prediction[predict_model_prediction > 4] = 4
+        predict_model_prediction[predict_model_prediction < -4] = -4
+        '''
+        return [train_reward, td_error, [pre_actions, action]]
 
-    def train_model(self, folder, round_nums=[], batch_size=64, epochs=30):
+    def train_model(self, folder, round_nums=[], batch_size=16, epochs=30):
         self.train_model_with_sum_tree(folder, round_nums, batch_size, epochs)
 
     # soft型,指数平滑拷贝
@@ -149,7 +161,7 @@ class DoubleDQN(KofAgent):
 
         fig1 = plt.figure()
         ax1 = fig1.add_subplot(111)
-        ax1.hist(ans.flatten(), bins=30, label=self.model_name)
+        ax1.hist(ans.flatten(), bins=30, label=self.model_type)
         fig1.legend()
 
         fig2 = plt.figure()
@@ -165,12 +177,13 @@ class DoubleDQN(KofAgent):
 # 将衰减降低至0.94，去掉了上次动作输入，将1p embedding带宽扩展到8，后效果比之前好了很多
 # 但动作比较集中
 class DuelingDQN(DoubleDQN):
-    def __init__(self, role, action_num, model_name='dueling_dqn', reward_decay=0.99):
-        super().__init__(role=role, action_num=action_num, model_name=model_name, reward_decay=reward_decay)
+    def __init__(self, role, action_num, model_type='dueling_dqn'):
+        super().__init__(role=role, action_num=action_num, model_type=model_type)
 
     def build_model(self):
-        shared_model = build_stacked_rnn_model(self)
-        # shared_model = build_rnn_attention_model(self)
+        # shared_model = build_stacked_rnn_model(self)
+        shared_model = build_rnn_attention_model(self)
+
         # shared_model = build_multi_attention_model(self)
         t_status = shared_model.output
 
@@ -182,7 +195,7 @@ class DuelingDQN(DoubleDQN):
         mean = layers.Lambda(lambda x: K.mean(x, axis=1, keepdims=True))(a)
         advantage = layers.Subtract()([a, mean])
         q = layers.Add()([value, advantage])
-        model = Model(shared_model.input, q, name=self.model_name)
+        model = Model(shared_model.input, q, name=self.model_type)
 
         model.compile(optimizer=Adam(lr=self.lr), loss='mse')
 
@@ -211,21 +224,25 @@ def train_model(model, folders):
 if __name__ == '__main__':
     # models = [DuelingDQN('iori'), DoubleDQN('iori')]
     model = DuelingDQN('iori', get_action_num('iori'))
-    train_model_1by1(model, range(1, 4), range(1, 11))
-    model.save_model()
+    # t = model.operation_analysis(5)
+    # train_model_1by1(model, range(1, 2), range(1, 11))
+    # model.save_model()
     # t = model.operation_analysis(1)
-    '''
-    raw_env = model.raw_data_generate(1, [1])
+
+    raw_env = model.raw_env_generate(3, [20])
     train_env, train_index = model.train_env_generate(raw_env)
     train_reward, td_error, n_action = model.double_dqn_train_data(raw_env, train_env, train_index)
     # 这里100 对应的是 raw_env 中 100+input_steps左右位置
     t = model.predict_model.predict([np.expand_dims(env[100], 0) for env in train_env])
+    # t = model.predict_model.predict([env for env in train_env])
     # output = model.output_test([ev[50].reshape(1, *ev[50].shape) for ev in train_env])
     # train_reward[range(len(n_action[1])), n_action[1]]
     # model.model_test(1, [1])
     # t = model.operation_analysis(5)
     # 查看训练数据是否对的上
+    '''
     index = 65
     train_index[index], raw_env['action'].reindex(train_index).values[index], raw_env['reward'].reindex(
         train_index).values[index], [np.expand_dims(env[index], 0) for env in train_env]
     '''
+

@@ -7,19 +7,25 @@ import numpy as np
 from kof.kof_agent import KofAgent, train_model_1by1, get_maxsize_file
 from tensorflow.keras import layers
 from tensorflow.python.keras import Input, Model
-from tensorflow.python.keras.layers import BatchNormalization
-from tensorflow.python.keras.optimizers import Adam
+from tensorflow.keras.optimizers import Adam
 from tensorflow.keras import losses
 from tensorflow.keras import backend as K
 import tensorflow as tf
 from matplotlib import pyplot as plt
 
-from kof.shared_model import build_multi_attention_model
+from kof.kof_command_mame import get_action_num
+from kof.shared_model import build_multi_attention_model, build_stacked_rnn_model, build_rnn_attention_model
+from kof.sumtree import SumTree
 from kof.value_based_models import DoubleDQN
 
 tf.compat.v1.disable_eager_execution()
 data_dir = os.getcwd()
-epsilon = 0.4
+epsilon = 0.2
+
+'''
+损失不是衡量模型好坏的标准
+ppo在极小的学习率下，就能逐渐改变策略，但损失变化极小，如果需要损失变化大，则策略改动巨大，不能用损失变化来衡量好坏
+'''
 
 
 def DDPG_loss(y_true, y_pred):
@@ -36,14 +42,14 @@ class PPO_Loss(layers.Layer):
 
     def call(self, inputs, **kwargs):
         # p/q*v*▽log(p) 第一个p由外部p_out输入
-        r, q, p = inputs
+        adv, q, p = inputs
 
         # 有时概率会为0，导致输出loss极大，做剪裁来避免
         # 这里是▽（p/q*v*log(p))的原因，修改后应该不需要
         # p_new = K.clip(p_out, 0.0001, 1)
 
         ration = p / q
-        adv = r
+        # 通过adv中将其他动作置0来去掉未采取动作
         loss = -K.minimum(ration * adv, K.clip(ration, 1. - epsilon, 1. + epsilon) * adv)
         self.add_loss(K.mean(loss), inputs=inputs)
         return loss
@@ -51,12 +57,13 @@ class PPO_Loss(layers.Layer):
 
 class ActorCritic(DoubleDQN):
 
-    def __init__(self, role, model_name='AC_actor'):
-        self.critic = Critic(role, model_name=model_name + "_critic")
-        super().__init__(role=role, model_name=model_name)
+    def __init__(self, role, action_num, model_type='AC_actor'):
+        self.critic = Critic(role, action_num=action_num, model_type=model_type + "_critic")
+        super().__init__(role=role, action_num=action_num, model_type=model_type)
         self.train_reward_generate = self.actor_tarin_data
         self.actor = self.predict_model
 
+    '''
     def choose_action(self, raw_data, random_choose=False):
         if random_choose or random.random() > self.e_greedy:
             return random.randint(0, self.action_num - 1)
@@ -64,14 +71,15 @@ class ActorCritic(DoubleDQN):
             # 使用np.random.choice返回采样结果
             prob = self.predict_model.predict(self.raw_env_data_to_input(raw_data))
             return np.random.choice(self.action_num, p=prob[0])
+    '''
 
     def build_model(self):
         # shared_model = self.build_shared_model()
         shared_model = build_multi_attention_model(self.input_steps)
         t_status = shared_model.output
         output = layers.Dense(self.action_num, activation='softmax')(t_status)
-        model = Model(shared_model.input, output, name=self.model_name)
-        model.compile(optimizer=Adam(lr=0.00001), loss=losses.categorical_crossentropy)
+        model = Model(shared_model.input, output, name=self.model_type)
+        model.compile(optimizer=Adam(lr=self.lr), loss=losses.categorical_crossentropy)
         return model
 
     def actor_tarin_data(self, raw_env, train_env, train_index):
@@ -89,12 +97,14 @@ class ActorCritic(DoubleDQN):
     def train_model(self, folder, round_nums=[], batch_size=64, epochs=30):
         # 先使用critic的td_error交叉熵训练actor，再训练critic
         # 注意这里由于PG算法限制，数据只能用一次。。。用完概率分布就改变了，公式就不满足了，PPO对此作了改进
-        print(self.model_name)
+        print(self.model_type)
         # KofAgent.train_model_with_sum_tree(self, folder, round_nums=round_nums, batch_size=batch_size, epochs=1)
         KofAgent.train_model(self, folder, round_nums, batch_size, epochs)
         print('train_critic')
         self.critic.train_model(folder, round_nums=round_nums, batch_size=batch_size, epochs=epochs)
 
+    # 1000000*32/8/1024/1024≈4 一百万参数模型大小大约是4m，
+    # keras 保存一些别的东西，所以模型要大一些
     def save_model(self):
         DoubleDQN.save_model(self)
         self.critic.save_model()
@@ -105,35 +115,35 @@ class ActorCritic(DoubleDQN):
 
     def weight_copy(self):
         self.critic.weight_copy()
-        DoubleDQN.weight_copy(self)
+        # DoubleDQN.weight_copy(self)
 
 
-# PPO也是预测概率，build model
+# PPO也是预测概率
+# 这里继承AC主要是为了用critic,以及函数save，load，weight_copy
 class PPO(ActorCritic):
 
-    def __init__(self, role, model_name='PPO_actor'):
-        ActorCritic.__init__(self, role=role, model_name=model_name)
-
-        # 用于训练的模型
+    def __init__(self, role, action_num, model_type='PPO_actor'):
+        ActorCritic.__init__(self, role=role, action_num=action_num, model_type=model_type)
+        # 用于训练的模型, 加额外的ppo损失
         self.trained_model = self.build_train_model()
         self.trained_model.set_weights(self.predict_model.get_weights())
-        # self.train_model = self.train_with_custom_loop
-        self.copy_interval = 6
 
     def build_model(self):
-        # shared_model = build_attention_model(self.input_steps, self.action_num)
-        shared_model = build_multi_attention_model(self.input_steps)
+        shared_model = build_stacked_rnn_model(self)
+        # shared_model = build_rnn_attention_model(self)
+        # shared_model = build_multi_attention_model(self.input_steps)
         t_status = shared_model.output
         output = layers.Dense(self.action_num, activation='softmax')(t_status)
-        model = Model(shared_model.input, output, name=self.model_name)
+        model = Model(shared_model.input, output, name=self.model_type)
         # 这里的优化器，损失都没用
-        model.compile(optimizer=Adam(lr=0.00003), loss='mse')
+        model.compile(optimizer=Adam(lr=self.lr), loss='mse')
         return model
 
     # 这个模型加了损失层PPO_Loss，用于训练
     def build_train_model(self):
         # shared_model = build_attention_model(self.input_steps, self.action_num)
-        shared_model = build_multi_attention_model(self.input_steps)
+        # shared_model = build_multi_attention_model(self.input_steps)
+        shared_model = build_stacked_rnn_model(self)
         t_status = shared_model.output
         p = layers.Dense(self.action_num, activation='softmax', name='p')(t_status)
 
@@ -142,9 +152,9 @@ class PPO(ActorCritic):
 
         loss = PPO_Loss()([r, q, p])
         train_input = shared_model.input + [r, q]
-        model = Model(train_input, loss, name=self.model_name)
-        # 减小学习率，避免策略遗忘的太快
-        model.compile(optimizer=Adam(lr=0.000001), loss=None)
+        model = Model(train_input, loss, name=self.model_type)
+        # 减小学习率，避免策略改变的太快
+        model.compile(optimizer=Adam(lr=self.lr), loss=None)
         return model
 
     def actor_tarin_data(self, raw_env, train_env, train_index):
@@ -152,25 +162,22 @@ class PPO(ActorCritic):
         # PPO用到运行时的分布
         old_prob = self.target_model.predict(train_env)
         old_action = old_prob.argmax(axis=1)
-        # 即使softmax也有可能是0,或者极小，这样就导致计算得到nan,或者非常大，
-        # 这里设置成一个相对小的数
-        # old_prob[old_prob < 0.001] = 0.001
-        reward_onehot = np.ones(shape=(len(action[1]), self.action_num))
+        # 这里要用zero将无关动作置0，避免计入损失
+        reward_onehot = np.zeros(shape=(len(action[1]), self.action_num))
         # 这里用adv或者te_error都可以
         # reward_onehot[range(len(action[1])), action[1]] = adv[:, 0]
         reward_onehot[range(len(action[1])), action[1]] = td_error
         return [[reward_onehot, old_prob], td_error, [old_action, action[1]]]
 
-    # 暂时不用sumtree
-    def train_model(self, folder, round_nums=[], batch_size=64, epochs=30):
+    def train_model(self, folder, round_nums=[], batch_size=16, epochs=30):
         # 先使用critic的td_error交叉熵训练actor，再训练critic
-        # 注意这里由于PG算法限制，数据只能用一次。。。用完概率分布就改变了，公式就不满足了，PPO对此作了改进
-        print('train ', self.model_name)
+
+        print('train ', self.model_type)
 
         if not round_nums:
             round_nums = get_maxsize_file(folder)
 
-        raw_env = self.raw_data_generate(folder, round_nums)
+        raw_env = self.raw_env_generate(folder, round_nums)
         train_env, train_index = self.train_env_generate(raw_env)
         train_target, td_error, action = self.train_reward_generate(raw_env, train_env, train_index)
 
@@ -178,13 +185,13 @@ class PPO(ActorCritic):
         train_env += train_target
 
         self.trained_model.set_weights(self.predict_model.get_weights())
-        # 用来生成公式外面的p
+        sum_tree = SumTree(abs(td_error))
         loss_history = []
         print('train {}/{} {} epochs'.format(folder, round_nums, epochs))
         for e in range(epochs):
             loss = 0
             for i in range(len(train_index) // batch_size):
-                index = range(i * batch_size, (i + 1) * batch_size)
+                index = sum_tree.gen_batch_index(batch_size)
                 # train_model loss层没有y
                 loss += self.trained_model.train_on_batch([env[index] for env in train_env])
             print(loss / (len(train_index) // batch_size))
@@ -193,6 +200,7 @@ class PPO(ActorCritic):
         self.record['total_epochs'] += epochs
         # PPO的参数每轮都需要更新一次，概率分布不能太远
         self.predict_model.set_weights(self.trained_model.get_weights())
+        # target_model提供q分布，所以应该也要更新
         self.target_model.set_weights(self.trained_model.get_weights())
 
         '''
@@ -207,58 +215,9 @@ class PPO(ActorCritic):
         self.critic.train_model(folder, round_nums=round_nums, batch_size=batch_size, epochs=epochs)
         return loss_history
 
-    # 之前的公式理解有问题，这里进行修改
-    def train_with_custom_loop(self, folder, round_nums=[], batch_size=64, epochs=30):
-        # 先使用critic的td_error交叉熵训练actor，再训练critic
-        # 注意这里由于PG算法限制，数据只能用一次。。。用完概率分布就改变了，公式就不满足了，PPO对此作了改进
-        print('train ', self.model_name)
-
-        if not round_nums:
-            round_nums = get_maxsize_file(folder)
-
-        raw_env = self.raw_data_generate(folder, round_nums)
-        train_env, train_index = self.train_env_generate(raw_env)
-        train_target, td_error, action = self.train_reward_generate(raw_env, train_env, train_index)
-
-        # PPO的损失比较复杂放在最后一个损失层来实现，reward等一起作为输入
-        # train_env += train_target
-
-        self.trained_model.set_weights(self.predict_model.get_weights())
-
-        loss_history = []
-        optimizer = tf.keras.optimizers.Nadam(lr=0.0001)
-        print('train {}/{} {} epochs'.format(folder, round_nums, epochs))
-        for e in range(epochs):
-            epochs_loss = 0
-            for i in range(len(train_index) // batch_size):
-                # 公式外围不求导的p
-                index = range(i * batch_size, (i + 1) * batch_size)
-                q = tf.constant(train_target[1][index])
-                y_pred = self.predict_model.predict([env[index] for env in train_env])
-                p_out = np.zeros_like(y_pred)
-                p_out[range(len(index)), action[1][index]] = y_pred[range(len(action[1][index])), action[1][index]]
-                ratio = p_out.astype(np.float32) / q
-                adv = tf.constant(train_target[0][index].astype(np.float32))
-                j = tf.minimum(ratio * adv, tf.clip_by_value(ratio, 1. - epsilon, 1. + epsilon) * adv)
-                with tf.GradientTape() as tape:
-                    p_in = self.predict_model([env[index].astype(np.float32) for env in train_env], training=True)
-                    log_p = tf.math.log(p_in)
-                    loss = tf.reduce_mean(j * log_p)
-                gradients = tape.gradient(loss, self.predict_model.trainable_variables)
-                optimizer.apply_gradients(zip(gradients, self.predict_model.trainable_variables))
-            epochs_loss += loss.numpy().mean()
-            loss_history.append(epochs_loss)
-
-        self.record['total_epochs'] += epochs
-        # PPO的参数每轮都需要更新一次，概率分布不能太远
-        self.predict_model.set_weights(self.trained_model.get_weights())
-        self.target_model.set_weights(self.trained_model.get_weights())
-        print('train_critic')
-        self.critic.train_model(folder, round_nums=round_nums, batch_size=batch_size, epochs=epochs)
-
     def value_test(self, folder, round_nums):
         # q值分布可视化
-        raw_env = self.raw_data_generate(folder, round_nums)
+        raw_env = self.raw_env_generate(folder, round_nums)
         train_env, train_index = self.train_env_generate(raw_env)
         ans = self.predict_model.predict(train_env)
         # 这里是训练数据但是也可以拿来参考,查看是否过估计，目前所有的模型几乎都会过估计
@@ -282,17 +241,17 @@ class PPO(ActorCritic):
 
 # DDPG适合连续的动作空间，用在这里不合适
 class DDPG(ActorCritic):
-    def __init__(self, role, model_name='PPO_actor'):
-        ActorCritic.__init__(self, role=role, model_name=model_name)
+    def __init__(self, role, action_num, model_type='PPO_actor'):
+        ActorCritic.__init__(self, role=role, model_type=model_type, action_num=action_num)
         self.copy_interval = 1
 
     def build_model(self):
-        shared_model = self.build_shared_model()
+        shared_model = build_stacked_rnn_model(self)
         t_status = shared_model.output
         output = layers.Dense(self.action_num)(t_status)
-        model = Model(shared_model.input, output, name=self.model_name)
+        model = Model(shared_model.input, output, name=self.model_type)
         # 这里的优化器，损失没有用
-        model.compile(optimizer=Adam(lr=0.00003), loss=DDPG_loss)
+        model.compile(optimizer=Adam(lr=self.lr), loss=DDPG_loss)
         return model
 
     def actor_tarin_data(self, raw_env, train_env, train_index):
@@ -305,31 +264,30 @@ class DDPG(ActorCritic):
 
 
 class Critic(DoubleDQN):
-    def __init__(self, role, model_name='critic'):
+    def __init__(self, role, action_num, model_type='critic'):
         # policy gradient 应该是个连续的情况，所以这里用比较高的reward_decay
-        DoubleDQN.__init__(self, role=role, model_name=model_name, reward_decay=0.92)
+        DoubleDQN.__init__(self, role=role, action_num=action_num, model_type=model_type)
         self.train_reward_generate = self.critic_dqn_train_data
         # 这设置一个较大multi_steps值
         self.multi_steps = 2
 
     def build_model(self):
-        # shared_model = self.build_shared_model()
-        shared_model = build_multi_attention_model(self.input_steps)
+        shared_model = build_stacked_rnn_model(self)
+        # shared_model = build_multi_attention_model(self.input_steps)
         t_status = shared_model.output
         # critic只输出和状态有关的v值
         value = layers.Dense(1)(t_status)
 
         model = Model(shared_model.input, value)
 
-        model.compile(optimizer=Adam(lr=0.00001), loss='mse')
+        model.compile(optimizer=Adam(lr=self.lr), loss='mse')
 
         return model
 
     # 只有状态价值v值，标量
     def critic_dqn_train_data(self, raw_env, train_env, train_index):
-        reward = raw_env['reward'].reindex(train_index)
-        reward = reward.values
-        action = raw_env['action'].reindex(train_index)
+        reward = raw_env['reward'].reindex(train_index).values
+        action = raw_env['action'].reindex(train_index).values
         action = action.astype('int')
 
         target_model_prediction = self.target_model.predict(train_env)
@@ -357,29 +315,29 @@ class Critic(DoubleDQN):
 
         td_error = reward - predict_model_prediction[range(len(train_index)), 0]
         predict_model_prediction[range(len(train_index)), 0] = reward
-
-        return [predict_model_prediction, td_error, [None, action.values]]
+        '''
+        predict_model_prediction[predict_model_prediction > 4] = 4
+        predict_model_prediction[predict_model_prediction < -4] = -4
+        '''
+        return [predict_model_prediction, td_error, [None, action]]
 
 
 if __name__ == '__main__':
     # model1 = ActorCritic('iori')
     # model2 = Critic('iori')
 
-    model2 = PPO('iori')
+    model2 = PPO('iori', get_action_num('iori'))
 
-    model2.train_model(1, [1])
-    # model2.train_with_custom_loop(1, [1])
+    # model2.train_model(1, [1])
     # model3 = DDPG('iori')
-
-    # train_model_1by1(model2, range(1, 7), range(1, 6))
+    # train_model_1by1(model2, range(1, 4), range(1, 10))
+    # model2.save_model()
+    '''
     # model2.model_test(2, [1])
     # model2.value_test(2, [1])
     # model2.operation_analysis(1)
-    # model2.save_model()
-    '''
+
     model2.model_test(5, [1])
-    '''
-    '''
     raw_env = model2.raw_data_generate(1, [1])
     train_env, train_index = model2.train_env_generate(raw_env)
     train_distribution, td_error, n_action = model2.actor_tarin_data(raw_env, train_env, train_index)

@@ -3,6 +3,7 @@ from tensorflow.keras import layers
 
 import numpy as np
 import tensorflow as tf
+from tensorflow.python.keras.models import Model
 
 batch_size = 64
 
@@ -102,6 +103,72 @@ class Attention(layers.Layer):
         return (input_shape[0], input_shape[2])  # batch_size, embedding_dim
 
 
+class BahdanauAttention(tf.keras.layers.Layer):
+    # units 是query, values计算权重前进行线性变换的大小
+    def __init__(self, units):
+        super(BahdanauAttention, self).__init__()
+        self.W1 = tf.keras.layers.Dense(units)
+        self.W2 = tf.keras.layers.Dense(units)
+        self.V = tf.keras.layers.Dense(1)
+
+    def call(self, query, values):
+        # query 初始是encoder rnn输出的最后一个隐藏状态，之后是decoder 的最后一个隐藏状态
+        # query hidden state shape == (batch_size, hidden size)，
+        # query_with_time_axis shape == (batch_size, 1, hidden size) # 为了广播
+
+        query_with_time_axis = tf.expand_dims(query, 1)
+
+        # score shape == (batch_size, max_length, 1)
+        # we get 1 at the last axis because we are applying score to self.V
+        # the shape of the tensor before applying self.V is (batch_size, max_length, units)
+        score = self.V(tf.nn.tanh(
+            self.W1(query_with_time_axis) + self.W2(values)))
+
+        # attention_weights shape == (batch_size, max_length, 1)
+        attention_weights = tf.nn.softmax(score, axis=1)
+
+        # context_vector shape after sum == (batch_size, hidden_size)
+        context_vector = attention_weights * values
+        context_vector = tf.reduce_sum(context_vector, axis=1)
+
+        return context_vector, attention_weights
+
+
+# 这里是从tensowflow官网拷下来的
+# 用的公式是luong attention的，不知道为什么命名为BahdanauAttention
+class BahdanauAttention(tf.keras.layers.Layer):
+    def __init__(self, units):
+        # units 是在计算权重前query和values做线性变换的尺寸
+        super(BahdanauAttention, self).__init__()
+        self.W1 = tf.keras.layers.Dense(units)
+        self.W2 = tf.keras.layers.Dense(units)
+        self.V = tf.keras.layers.Dense(1)
+
+    def call(self, query, values):
+        #  rnn输出的最后一个隐藏状态作为query, hidden_size就是嵌入尺寸
+        # query hidden state shape == (batch_size, hidden size)
+        # query_with_time_axis shape == (batch_size, 1, hidden size) 用于广播
+        query_with_time_axis = tf.expand_dims(query, 1)
+
+        # 这里用的是concat公式，但是中并不是contact，而是广播相加，应该可以尝试换成dot和general
+        # max_length就是time steps
+        # score shape == (batch_size, max_length, 1)
+        # (batch_size, max_length, units) -> (batch_size, max_length, 1)
+        score = self.V(tf.nn.tanh(
+            self.W1(query_with_time_axis) + self.W2(values)))
+
+        # (batch_size, max_length, 1)
+        attention_weights = tf.nn.softmax(score, axis=1)
+
+        # (batch_size, max_length, 1) * (batch_size, max_length, hidden_size) -> (batch_size, max_length, hidden_size)
+        # 每个权重对乘以一列units
+        context_vector = attention_weights * values
+        # (batch_size, max_length, hidden_size)->(batch_size, hidden_size)
+        context_vector = tf.reduce_sum(context_vector, axis=1)
+
+        return context_vector, attention_weights
+
+
 class PositionalEncoding(tf.keras.layers.Layer):
     def __init__(self, max_steps, max_dims, dtype=tf.float32, **kwargs):
         super().__init__(dtype=dtype, **kwargs)
@@ -116,3 +183,14 @@ class PositionalEncoding(tf.keras.layers.Layer):
     def call(self, inputs):
         shape = tf.shape(inputs)
         return inputs + self.positional_embedding[:, :shape[-2], :shape[-1]]
+
+
+if __name__ == '__main__':
+    x = layers.Input(shape=(20, 4))
+    y, h, c = layers.LSTM(10, return_state=True, return_sequences=True)(x)
+    att1 = BahdanauAttention(10)(h, y)
+    att2 = layers.Attention()([h, y])
+    m1 = Model(x, att1)
+    m2 = Model(x, att2)
+    m1.summary()
+    m2.summary()

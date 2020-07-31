@@ -43,10 +43,10 @@ class SumTree:
             level += 1
         return idx
 
-    def gen_batch_index(self, batch_size):
+    def gen_batch_index(self, batch_num):
         td_error_sum = self.td_error.sum()
-        sample_base_value = np.linspace(0, (batch_size - 1) / batch_size * td_error_sum, batch_size)
-        sample_random_value = np.random.rand(batch_size) * td_error_sum / batch_size
+        sample_base_value = np.linspace(0, (batch_num - 1) / batch_num * td_error_sum, batch_num)
+        sample_random_value = np.random.rand(batch_num) * td_error_sum / batch_num
         sample_value = sample_base_value + sample_random_value
         # print(sample_value)
         return [self.sample(v) for v in sample_value]

@@ -44,24 +44,22 @@ function test()
             countdown = mem:read_i16(0x10A83A)
             if countdown ~= 0 and countdown ~= 24626
             then
-                -- act code, energy
+                -- act code
                 s = mem:read_i16(0x108172).." "
                 s = s..mem:read_i16(0x108372).." "
-                
+
+                --12p xy坐标
+                t = mem:read_i16(0X108118)/760
+                s = s..t.." "
+                t = mem:read_i16(0x108120)/128
+                s = s..t.." "
+                t = mem:read_i16(0X108318)/760
+                s = s..t.." "
+                t = mem:read_i16(0x108320)/128
+                s = s..t.." "
+                --energy
                 s = s..mem:read_i8(0x1082E3).." "
                 s = s..mem:read_i8(0x1084E3).." "
-
-                --12p xy坐标,去除中心化，直接通过bn层进行处理
-                --12p xy坐标
-                t = (mem:read_i16(0X108118)-380)/380
-                s = s..t.." "
-                t = (mem:read_i16(0x108120)-128)/128
-                s = s..t.." "
-                t = (mem:read_i16(0X108318)-380)/380
-                s = s..t.." "
-                t = (mem:read_i16(0x108320)-128)/128
-                s = s..t.." "
-                
                 --1p曝气
                 t = mem:read_i8(0x1081E0)//16
                 s = s..t.." "
