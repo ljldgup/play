@@ -1,18 +1,17 @@
 import os
-import random
 import subprocess
 import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import redirect_stdout
 
 import numpy as np
 
-from kof.distributional_dqn import DistributionalDQN, QuantileRegressionDQN
-from kof.kof_agent import RandomAgent
-from kof.policy_based_model import ActorCritic, PPO, DDPG
-from kof.value_based_models import DoubleDQN, DuelingDQN
+from common.distributional_dqn_model import DistributionalDQN
+from common.policy_based_model import PPO
+from common.value_based_models import DuelingDQN
+from kof.kof_agent import raw_env_generate, train_env_generate, empty_env, raw_env_data_to_input
 from kof.kof_command_mame import operation, restart, global_set, get_action_num
+from kof.kof_network import build_rnn_attention_model
 
 '''
 mame.ini keyboardprovider设置成win32不然无法接受键盘输入
@@ -32,11 +31,13 @@ def train_on_mame(model, train=True, round_num=12):
     # 每次打完训练次数,太大容易极端化
     epochs = 50
 
+    data_dir = os.getcwd() + '/data/'
     # 存放数据路径
     folder_num = 1
-    while os.path.exists(str(folder_num)):
+    while os.path.exists(data_dir + str(folder_num)):
         folder_num += 1
-    data_dir = os.getcwd() + '/' + str(int(folder_num))
+    data_dir = data_dir + str(int(folder_num))
+
     print('数据目录：{}'.format(data_dir))
     os.mkdir(data_dir)
     with open(data_dir + '/' + model.model_type, 'w') as f:
@@ -169,14 +170,17 @@ if __name__ == '__main__':
 
     global_set(role)
     # dqn_model = DoubleDQN('iori')
-    dqn_model = PPO(role, get_action_num(role))
-    # dqn_model = DuelingDQN(role, get_action_num(role))
+    functions = [  # build_stacked_rnn_model
+        build_rnn_attention_model,
+        raw_env_generate, train_env_generate,
+        raw_env_data_to_input, empty_env]
+    # dqn_model = PPO('iori', get_action_num('iori'), functions)
+    # dqn_model = DuelingDQN('iori', get_action_num('iori'), functions)
+    dqn_model = DistributionalDQN('iori', get_action_num('iori'), functions)
+
     # QuantileRegressionDQN有bug，会过估计，暂时不明白错误在哪里
     # dqn_model = QuantileRegressionDQN()
-    # dqn_model = DistributionalDQN(role, get_action_num(role))
     # dqn_model = RandomAgent('iori')
-    # model.load_model('1233')
-    # model = random_model('kyo')
     round_num = 42
     folder_num = train_on_mame(dqn_model, True, round_num)
     # dqn_model.train_model(folder_num, epochs=20)

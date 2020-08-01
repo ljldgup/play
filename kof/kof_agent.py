@@ -1,31 +1,15 @@
 import os
-import random
-import time
-import traceback
+import types
 
-import pandas as pd
 import numpy as np
-from tensorflow.python.keras import Model
-from kof.kof_command_mame import global_set, role_commands
-from kof.sumtree import SumTree
+import pandas as pd
 
-
-class RandomAgent:
-    def __init__(self, role):
-        self.model_name = 'random'
-        self.role = role
-        self.action_num = len(role_commands[role])
-        self.input_steps = 1
-        # 操作间隔步数
-        self.operation_interval = 2
-        global_set(role)
-
-    def choose_action(self, *args, **kwargs):
-        return random.randint(0, self.action_num - 1)
-
-    def save_model(self):
-        pass
-
+from common.agent import train_model_1by1
+from common.distributional_dqn_model import DistributionalDQN
+from common.policy_based_model import PPO
+from common.value_based_models import DuelingDQN
+from kof.kof_command_mame import get_action_num
+from kof.kof_network import build_rnn_attention_model
 
 data_dir = os.getcwd()
 env_colomns = ['role1_action', 'role2_action',
@@ -43,336 +27,142 @@ input_colomns = ['role1_action', 'role2_action',
                  'role2_position_x', 'role2_position_y', 'role1_baoqi', 'role2_baoqi', 'action']
 
 
-# 选择效果比较好，即文件比较大的记录
-def get_maxsize_file(folder):
-    files = os.listdir('{}/{}'.format(data_dir, folder))
-    data_files = filter(lambda f: '.' in f, files)
-    round_nums = np.array(list(set([file.split('.')[0] for file in data_files])))
-    file_size = map(lambda num: os.path.getsize('{}/{}/{}.env'.format(data_dir, folder, num)), round_nums)
-    # 取前6个
-    return round_nums[np.array(list(file_size)).argsort()].tolist()[-6:]
+# 读入round_nums文件下的文件，并计算reward
+def raw_env_generate(self, folder, round_nums):
+    if round_nums:
+        raw_env_list = []
 
-
-def train_model_1by1(model, folders, rounds):
-    print('-----------------------------')
-    print('train ', model.model_type)
-
-    # 在刚开始训练网络的时候使用
-    # model.multi_steps = 6
-    count = 0
-    for i in folders:
-        for r in rounds:
-            try:
-                print('train {}/{}'.format(i, r))
-                # model.train_model(i)
-                model.train_model(i, [r], epochs=15)
-                # 这种直接拷贝的效果和nature DQN其实没有区别。。所以放到外层去拷贝，训练时应该加大拷贝的间隔
-                # 改成soft copy
-                # model.soft_weight_copy()
-                count += 1
-            except:
-                traceback.print_exc()
-            if count % model.copy_interval == 0:
-                model.weight_copy()
-    model.save_model()
-
-
-# 这里通过继承修改raw_env_generate，train_env_generate,empty_env，raw_env_data_to_input改变环境对应对应生成方式
-# 以及build_model中共享的模型函数，可以把KofAgent调整成为其他需要的Agent
-class KofAgent:
-    def __init__(self, role, model_type, action_num):
-        self.role = role
-        self.model_type = model_type
-        self.action_num = action_num
-        self.reward_decay = 0.99
-        # 输入步数
-        self.input_steps = 6
-
-        # 训练时会重置
-        self.e_greedy = 0
-
-        # 操作间隔时间步数
-        self.operation_interval = 3
-
-        # multi_steps 配合decay使网络趋向真实数据，但multi_steps加大会导致r波动大
-        # 这里调大了间隔后，multi_steps应该减小一些
-        self.multi_steps = 2
-
-        # 模型参数拷贝间隔
-        self.copy_interval = 3
-        # reward 缩减比例
-        self.reward_scale_factor = 30
-        # 学习率
-        self.lr = 2e-8
-        # build_model由子类提供
-        self.predict_model = self.build_model()
-        self.target_model = self.build_model()
-        self.target_model.set_weights(self.predict_model.get_weights())
-        self.record = self.get_record()
-        if os.path.exists('{}/model/{}_{}_{}_record'.format(data_dir, self.role, self.model_type, self.network_type)):
-            self.load_model()
-        else:
-            print('no model/{}_{}_{} weights'.format(data_dir, self.role, self.model_type, self.network_type))
-
-    def choose_action(self, raw_data, action, random_choose=False):
-        if random_choose or random.random() > self.e_greedy:
-            return random.randint(0, self.action_num - 1)
-        else:
-            # 根据dqn的理论，这里应该用训练的模型， target只在寻训练的时候使用，并且一定时间后才复制同步
-            return self.predict_model.predict(self.raw_env_data_to_input(raw_data, action)).argmax()
-
-    # 读入round_nums文件下的文件，并计算reward
-    def raw_env_generate(self, folder, round_nums):
-        if round_nums:
-            if os.path.exists('{}/{}/{}.env'.format(data_dir, folder, round_nums[0])):
-                raw_env = np.loadtxt('{}/{}/{}.env'.format(data_dir, folder, round_nums[0]))
-                raw_actions = np.loadtxt('{}/{}/{}.act'.format(data_dir, folder, round_nums[0]))
+        for i in range(0, len(round_nums)):
+            if os.path.exists('{}/data/{}/{}.env'.format(data_dir, folder, round_nums[i])):
+                env = np.loadtxt('{}/data/{}/{}.env'.format(data_dir, folder, round_nums[i]))
+                actions = np.loadtxt('{}/data/{}/{}.act'.format(data_dir, folder, round_nums[i]))
+                raw_env = pd.DataFrame(env, columns=env_colomns)
+                raw_env['action'] = actions
+                raw_env['num'] = round_nums[i]
+                raw_env_list.append(raw_env)
             else:
-                raise Exception('no {}/{}/{}.env'.format(data_dir, folder, round_nums[0]))
-            for i in range(1, len(round_nums)):
-                if os.path.exists('{}/{}/{}.env'.format(data_dir, folder, round_nums[i])):
-                    # print(i)
-                    raw_env = np.concatenate([raw_env,
-                                              np.loadtxt('{}/{}/{}.env'.format(data_dir, folder, round_nums[i]))])
-                    raw_actions = np.concatenate([raw_actions,
-                                                  np.loadtxt(
-                                                      '{}/{}/{}.act'.format(data_dir, folder, round_nums[i]))])
+                raise Exception('no {}/data/{}/{}.env'.format(data_dir, folder, round_nums[i]))
 
-            raw_env = pd.DataFrame(raw_env, columns=env_colomns)
-            raw_env['action'] = raw_actions
-            # 筛选时间在流动的列
-            raw_env = raw_env[raw_env['time'].diff(1).fillna(0) != 0]
+        raw_env = pd.concat(raw_env_list)
+        # 重排索引，去掉重复，drop=True避免原来的索引成为列
+        raw_env = raw_env.reset_index(drop=True)
+        # 筛选时间在流动的列
+        raw_env = raw_env[raw_env['time'].diff(1).shift(-1).fillna(1) < 0]
 
-            # 这里改成self.operation_interval步一操作，所以diff改成对应的偏移
-            role1_life_reward = raw_env['role1_life'].diff(-self.operation_interval).fillna(0)
-            # 这里是向后比较所以正常返回正值，负的是由于重开造成
-            role1_life_reward[role1_life_reward < 0] = 0
-            role2_life_reward = raw_env['role2_life'].diff(-self.operation_interval).fillna(0)
-            role2_life_reward[role2_life_reward < 0] = 0
+        # 这里改成self.operation_interval步一操作，所以diff改成对应的偏移
+        role1_life_reward = raw_env['role1_life'].diff(-self.operation_interval).fillna(0)
+        # 这里是向后比较所以正常返回正值，负的是由于重开造成
+        role1_life_reward[role1_life_reward < 0] = 0
+        role2_life_reward = raw_env['role2_life'].diff(-self.operation_interval).fillna(0)
+        role2_life_reward[role2_life_reward < 0] = 0
 
-            # 这里避免新的一局开始，血量回满被误认为报酬,在后面加输赢reward的时候已修正
-            # life_reward[raw_env['time'].diff(1).fillna(1) > 0] = 0
+        # 这里避免新的一局开始，血量回满被误认为报酬,在后面加输赢reward的时候已修正
+        # life_reward[raw_env['time'].diff(1).fillna(1) > 0] = 0
 
-            # combo_reward = - raw_env['role1_combo_count'].diff(-self.operation_interval).fillna(0)
+        # combo_reward = - raw_env['role1_combo_count'].diff(-self.operation_interval).fillna(0)
 
-            # 防守的收益
-            guard_reward = -raw_env['role1_guard_value'].diff(-self.operation_interval).fillna(0)
-            # 破防值回复不算
-            guard_reward = guard_reward.map(lambda x: x / 10 if x > 0 else 0)
+        # 防守的收益
+        guard_reward = -raw_env['role1_guard_value'].diff(-self.operation_interval).fillna(0)
+        # 破防值回复不算
+        guard_reward = guard_reward.map(lambda x: x / 10 if x > 0 else 0)
 
-            # 值要在[-1，1]左右,reward_sum太小反而容易过估计
-            # 这里自己的生命更加重要,对方生命进行缩放
-            raw_env['raw_reward'] = role2_life_reward - role1_life_reward + guard_reward
-            raw_env['reward'] = raw_env['raw_reward'] / self.reward_scale_factor
+        # 值要在[-1，1]左右,reward_sum太小反而容易过估计
+        # 这里自己的生命更加重要,对方生命进行缩放
+        raw_env['raw_reward'] = role2_life_reward - role1_life_reward + guard_reward
+        raw_env['reward'] = raw_env['raw_reward'] / self.reward_scale_factor
 
-            # 当前步的reward实际上是上一步的，我一直没有上移，这是个巨大的错误
-            # raw_env['reward'] = raw_env['reward'].shift(-1).fillna(0)
-            # 这个地方应该是错误的，因为diff就是当前和之后的差，就是当前action的reward，所以应该不需要再移动
+        # 当前步的reward实际上是上一步的，我一直没有上移，这是个巨大的错误
+        # raw_env['reward'] = raw_env['reward'].shift(-1).fillna(0)
+        # 这个地方应该是错误的，因为diff就是当前和之后的差，就是当前action的reward，所以应该不需要再移动
 
-            # 根据胜负增加额外的报酬,pandas不允许切片或者搜索赋值，只能先这样
-            t = raw_env[raw_env['action'] > 0]
-            end_index = (t[t['time'].diff(1).shift(-1).fillna(1) > 0]).index
+        # 根据胜负增加额外的报酬,pandas不允许切片或者搜索赋值，只能先这样
+        t = raw_env[raw_env['action'] > 0]
+        end_index = (t[t['time'].diff(1).shift(-1).fillna(1) > 0]).index
 
-            for idx in end_index:
-                # 这里暂时不明白为什么是loc,我是按索引取得，按理应该是iloc
-                if raw_env.loc[idx]['role1_life'] > raw_env.loc[idx]['role2_life']:
-                    raw_env.loc[idx]['reward'] = 3
-                elif raw_env.loc[idx]['role1_life'] < raw_env.loc[idx]['role2_life']:
-                    raw_env.loc[idx]['reward'] = -2
+        for idx in end_index:
+            # 这里暂时不明白为什么是loc,我是按索引取得，按理应该是iloc
+            if raw_env.loc[idx, 'role1_life'] > raw_env.loc[idx, 'role2_life']:
+                raw_env.loc[idx, 'reward'] = 3
+            elif raw_env.loc[idx, 'role1_life'] < raw_env.loc[idx, 'role2_life']:
+                raw_env.loc[idx, 'reward'] = -2
 
-            # r值裁剪,剪裁应该放到训练数据生成的地方
-            # raw_env['reward'][raw_env['reward'] > 2] = 2
-            # raw_env['reward'][raw_env['reward'] < -2] = -2
+        # r值裁剪,剪裁应该放到训练数据生成的地方
+        # raw_env['reward'][raw_env['reward'] > 2] = 2
+        # raw_env['reward'][raw_env['reward'] < -2] = -2
 
-            return raw_env
+        return raw_env
 
-    # 生成未加衰减奖励的训练数据
-    # 这里把文件夹换成env_reward_generate生成的数据，避免过度耦合
-    def train_env_generate(self, raw_env):
-        train_env_data = self.empty_env()
-        train_index = []
 
-        for index in raw_env['reward'][raw_env['action'] != -1].index:
-            # 这里是loc取的数量是闭区间和python list不一样
-            # guard_value不用，放在这里先补齐
-            env = raw_env[input_colomns].loc[index - self.input_steps + 1:index]
+# 生成未加衰减奖励的训练数据
+# 这里把文件夹换成env_reward_generate生成的数据，避免过度耦合
+def train_env_generate(self, raw_env):
+    train_env_data = self.empty_env()
+    train_index = []
 
-            # 去掉结尾
-            if len(env) != self.input_steps or \
-                    raw_env['time'].loc[index - self.input_steps + 1] < raw_env['time'].loc[index]:
-                pass
-            else:
-                data = env.values
-                data = data.reshape(1, *data.shape)
-                action = env['action'].values
-                action = action.reshape(1, *action.shape)
-                split_data = self.raw_env_data_to_input(data, action)
-                for i in range(len(split_data)):
-                    train_env_data[i].append(split_data[i])
-                train_index.append(index)
-        train_env_data = [np.array(env) for env in train_env_data]
-        # 去掉原来的长度为1的sample数量值
-        train_env_data = [env.reshape(env.shape[0], *env.shape[2:]) for env in train_env_data]
+    for index in raw_env['reward'][raw_env['action'] != -1].index:
+        # 这里是loc取的数量是闭区间和python list不一样
+        # guard_value不用，放在这里先补齐
+        env = raw_env[input_colomns].loc[index - self.input_steps + 1:index]
 
-        return [train_env_data, train_index]
-
-    # 最开始用的不考虑长期收益的模型，在pandas钟使用rolling来使其拥有少量的长期效果
-    # 现在使用该函数实现多态
-    def train_reward_generate(self, raw_env, train_env, train_index):
-        return [None, [None, None]]
-
-    # 在线学习可以batch_size设置成
-    # 改成所有数据何在一起，打乱顺序，使用batch 训练，速度快了很多
-    # batch_size的选取不同，损失表现完全不一样
-    def train_model(self, folder, round_nums=[], batch_size=16, epochs=30):
-        if not round_nums:
-            round_nums = get_maxsize_file(folder)
-
-        raw_env = self.raw_env_generate(folder, round_nums)
-        train_env, train_index = self.train_env_generate(raw_env)
-        train_target, td_error, action = self.train_reward_generate(raw_env, train_env, train_index)
-        random_index = np.random.permutation(len(train_index))
-        # verbose参数控制输出，这里每个epochs输出一次
-        self.predict_model.fit([env[random_index] for env in train_env], train_target[random_index],
-                               batch_size=batch_size,
-                               epochs=epochs, verbose=2)
-
-        self.record['total_epochs'] += epochs
-
-    # Prioritized Replay DQN 使用sumtree 生成 batch
-    def train_model_with_sum_tree(self, folder, round_nums=[], batch_size=16, epochs=30):
-        if not round_nums:
-            round_nums = get_maxsize_file(folder)
-
-        raw_env = self.raw_env_generate(folder, round_nums)
-        train_env, train_index = self.train_env_generate(raw_env)
-        train_target, td_error, action = self.train_reward_generate(raw_env, train_env, train_index)
-        sum_tree = SumTree(abs(td_error))
-        loss_history = []
-        print('train with sum tree {}/{} {} epochs'.format(folder, round_nums, epochs))
-        for e in range(epochs):
-            loss = 0
-            for i in range(len(train_target) // batch_size):
-                index = sum_tree.gen_batch_index(batch_size)
-                loss += self.predict_model.train_on_batch([env[index] for env in train_env], train_target[index])
-            loss_history.append(loss)
-            print(loss / (len(train_index) // batch_size))
-
-        self.record['total_epochs'] += epochs
-
-        '''
-        # 测试训练完后概率变化程度
-        new_r = self.predict_model.predict([env for env in train_env])
-        for o, n, td in zip(old_r[range(len(action[1])), action[1]],
-                                     new_r[range(len(action[1])), action[1]],
-                                     td_error):
-            print(o, n, td)
-        '''
-        return loss_history
-
-    def save_model(self):
-        if not os.path.exists('{}/model'.format(data_dir)):
-            os.mkdir('{}/model'.format(data_dir))
-        self.predict_model.save_weights(
-            '{}/model/{}_{}_{}'.format(data_dir, self.role, self.model_type, self.network_type))
-
-        with open('{}/model/{}_{}_{}_record'.format(data_dir, self.role, self.model_type, self.network_type), 'w') as r:
-            r.write(str(self.record))
-
-    def load_model(self):
-        print('load {}/model/{}_{}_{}'.format(data_dir, self.role, self.model_type, self.network_type))
-        self.predict_model.load_weights(
-            '{}/model/{}_{}_{}'.format(data_dir, self.role, self.model_type, self.network_type))
-
-    # 游戏运行时把原始环境输入，分割成模型能接受的输入，在具体的模型可以修改
-    def raw_env_data_to_input(self, raw_data, action):
-        # 将能量，爆气，上次执行的动作都只输入最后一次，作为decode的query
-        return (raw_data[:, :, 0], raw_data[:, :, 1], raw_data[:, -1:, 2], raw_data[:, -1:, 3],
-                raw_data[:, :, 4:6], raw_data[:, :, 6:8], raw_data[:, -1:, 8], raw_data[:, -1:, 9],
-                action[:, -1:])
-
-    # 这里返回的list要和raw_env_data_to_input返回的大小一样
-    def empty_env(self):
-        return [[], [], [], [], [], [], [], [], []]
-
-    def get_record(self):
-        if os.path.exists('{}/model/{}_{}_{}_record'.format(data_dir, self.role, self.model_type, self.network_type)):
-            with open('{}/model/{}_{}_{}_record'.format(data_dir, self.role, self.model_type, self.network_type),
-                      'r') as r:
-                record = eval(r.read())
+        # 去掉结尾
+        if len(env) != self.input_steps or \
+                raw_env['time'].loc[index - self.input_steps + 1] < raw_env['time'].loc[index]:
+            pass
         else:
-            record = {'total_epochs': 0, 'begin_time': time.asctime(time.localtime(time.time()))}
-        return record
+            data = env.values
+            data = data.reshape(1, *data.shape)
+            action = env['action'].values
+            action = action.reshape(1, *action.shape)
+            split_data = self.raw_env_data_to_input(data, action)
+            for i in range(len(split_data)):
+                train_env_data[i].append(split_data[i])
+            train_index.append(index)
+    train_env_data = [np.array(env) for env in train_env_data]
+    # 去掉原来的长度为1的sample数量值
+    train_env_data = [env.reshape(env.shape[0], *env.shape[2:]) for env in train_env_data]
 
-    # 分析动作的出现频率和回报率
-    def operation_analysis(self, folder):
-        files = os.listdir('{}/{}'.format(data_dir, folder))
-        data_files = filter(lambda f: '.' in f, files)
-        round_nums = list(set([file.split('.')[0] for file in data_files]))
+    return [train_env_data, train_index]
 
-        raw_env = self.raw_env_generate(folder, [round_nums[0]])
-        raw_env['num'] = round_nums[0]
-        for i in range(1, len(round_nums)):
-            t = self.raw_env_generate(folder, [round_nums[i]])
-            t['num'] = round_nums[i]
-            raw_env = pd.concat([raw_env, t])
 
-        raw_env['num'] = raw_env['num'].astype('int')
-        raw_env['action'] = raw_env['action'].astype('int')
-        raw_env = raw_env[raw_env['action'] > 0]
-        reward_chart = raw_env.groupby(['num']).sum()['reward'].plot.line(title='reward')
-        # 调整图例
-        # reward_chart.legend(loc='right')
-        reward_chart.legend(bbox_to_anchor=(1.0, 1.0))
+# 游戏运行时把原始环境输入，分割成模型能接受的输入，在具体的模型可以修改
+def raw_env_data_to_input(self, raw_data, action):
+    # 将能量，爆气，上次执行的动作都只输入最后一次，作为decode的query
+    return (raw_data[:, :, 0], raw_data[:, :, 1], raw_data[:, -1:, 2], raw_data[:, -1:, 3],
+            raw_data[:, :, 4:6], raw_data[:, :, 6:8], raw_data[:, -1:, 8], raw_data[:, -1:, 9],
+            action[:, -1:])
 
-        # 这里对num，action进行聚类，之后他们都在层次化索引上
-        # 所以需要unstack，将action移到列名,才能绘制出按文件名分开的柱状体
-        # 这里groupby(['action', 'num']) 后结果任然是有很多列，打印的时候看不出来，但操作会出错
-        # count()，可以随意取一列
-        action_count = raw_env.groupby(['action', 'num']).count()['reward'].unstack().fillna(0)
 
-        # action_count 进行unstack后是Dataframe，action_total则是Series
-        # 所以action_total是对第二个列聚类，使得两者列能够列对齐
-        action_total = raw_env.groupby(['num']).count()['action']
-        freq_chart = (action_count / action_total).plot.bar(title='freq')
-        freq_chart.legend(bbox_to_anchor=(1.0, 1.0))
-
-        # return raw_env
-
-    # 测试模型数据是否匹配,只能训练之前用
-    # 模型更新后就不准了
-    def model_test(self, folder, round_nums):
-        # 确定即时预测与回放的效果是一致的
-        raw_env = self.raw_env_generate(folder, round_nums)
-        train_env, train_index = self.train_env_generate(raw_env)
-        train_reward, td_error, n_action = self.train_reward_generate(raw_env, train_env, train_index)
-
-        # 检验后期生成的数据和当时采取的动作是否一样，注意比较的时候e_greedy 要设置成1,模型要没被训练过
-        print(np.array(n_action[1]) == np.array(n_action[0]))
-        # print(np.array(n_action[1]))
-        # print(train_reward.max())
-
-    # 输出测试，发现SeparableConv1D输出为及其稀疏,以及全连接层及其稀疏
-    def output_test(self, data):
-        layer_outputs = [layer.output for layer in self.predict_model.layers]
-        activation_model = Model(inputs=self.predict_model.input, outputs=layer_outputs)
-        layer_name = [layer.name for layer in self.predict_model.layers]
-        ans = activation_model.predict(data)
-        # for pair in zip(layer_name, ans):
-        # print(pair)
-        return {name: value for name, value in zip(layer_name, ans)}
+# 这里返回的list要和raw_env_data_to_input返回的大小一样
+def empty_env(self):
+    return [[], [], [], [], [], [], [], [], []]
 
 
 if __name__ == '__main__':
-    pass
-    # 不知道为什么不再在这个文件下调用，训练的数据不对，损失极小，待查
-    # model.train_folder(1, 30)
-    # model.model_test()
-    # data = kyo.generate_raw_train_data(3, 1)
+    functions = [build_rnn_attention_model, raw_env_generate, train_env_generate,
+                 raw_env_data_to_input, empty_env]
+    # model1 = PPO('iori', get_action_num('iori'), functions)
+    # model1 = DuelingDQN('iori', get_action_num('iori'), functions)
+    model1 = DistributionalDQN('iori', get_action_num('iori'), functions)
 
-    # print(kyo.train_model(1, 1))
-    # model.train_folder(7, 1)
-    # t = model.model_test(1, 1)
-    # model.train_folder(10)
-    # train_env_data, reward_train_data, n_action = model.generate_raw_train_data(1, 1)
-    # l = model.output_test([ev[10] for ev in train_env_data])
+    t = model1.operation_analysis(3)
+    # train_model_1by1(model1, range(1, 2), range(1, 11))
+    model1.save_model()
+    # t = model.operation_analysis(1)
+
+    raw_env = model1.raw_env_generate(3, [20])
+    train_env, train_index = model1.train_env_generate(raw_env)
+    train_reward, td_error, n_action = model1.train_reward_generate(raw_env, train_env, train_index)
+    # 这里100 对应的是 raw_env 中 100+input_steps左右位置
+    t = model1.predict_model.predict([np.expand_dims(env[100], 0) for env in train_env])
+    # t = model.predict_model.predict([env for env in train_env])
+    # output = model.output_test([ev[50].reshape(1, *ev[50].shape) for ev in train_env])
+    # train_reward[range(len(n_action[1])), n_action[1]]
+    # model1.model_test(1, [1])
+    # t = model1.operation_analysis(5)
+    # 查看训练数据是否对的上
+
+    index = 65
+    train_index[index], raw_env['action'].reindex(train_index).values[index], raw_env['reward'].reindex(
+        train_index).values[index], [np.expand_dims(env[index], 0) for env in train_env]
+    '''
+'''

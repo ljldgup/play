@@ -1,6 +1,5 @@
 import os
 import random
-import traceback
 
 import numpy as np
 import tensorflow as tf
@@ -10,10 +9,9 @@ from tensorflow.python.keras.layers import concatenate
 from tensorflow.keras.optimizers import Adam
 from matplotlib import pyplot as plt
 
-from kof.kof_agent import KofAgent, train_model_1by1
+from common.agent import CommonAgent, train_model_1by1
+from common.value_based_models import DoubleDQN
 from kof.kof_command_mame import get_action_num
-from kof.shared_model import build_multi_attention_model, build_stacked_rnn_model, build_rnn_attention_model
-from kof.value_based_models import DoubleDQN
 
 data_dir = os.getcwd()
 
@@ -22,18 +20,17 @@ data_dir = os.getcwd()
 # 而使用所有数据则相对收敛的快一些,所以不适用sumtree
 # 这个模型训练的非常慢
 class DistributionalDQN(DoubleDQN):
-    def __init__(self, role, action_num, reward_decay=0.99):
+    def __init__(self, role, action_num, functions, model_type='distributionalDQN'):
         # 这里的N必须是能得到有限小数分割区间大小的值，不然后面概率重置会出错
         self.N = 41
-        super().__init__(role=role, action_num=action_num, model_type='distributional')
-
+        super().__init__(role=role, action_num=action_num, functions=functions,
+                         model_type=model_type)
         # reward分布的值，用来乘以网络输出，得到reward期望
         self.vmax = 2
         self.vmin = -2
         self.rewards_values = np.linspace(self.vmin, self.vmax, self.N)
         self.rewards_distribution = np.array([[self.rewards_values] * self.action_num])
         self.train_reward_generate = self.distributional_dqn_train_data
-        self.copy_interval = 3
 
     def choose_action(self, raw_data, action, random_choose=False):
         if random_choose or random.random() > self.e_greedy:
@@ -45,8 +42,7 @@ class DistributionalDQN(DoubleDQN):
             return (ans * self.rewards_distribution).sum(axis=2).argmax()
 
     def build_model(self):
-        shared_model = build_stacked_rnn_model(self)
-        # shared_model = build_rnn_attention_model(self)
+        shared_model = self.base_network_build_fn()
         t_status = shared_model.output
         probability_distribution_layers = []
         for a in range(self.action_num):
@@ -172,7 +168,7 @@ class DistributionalDQN(DoubleDQN):
         return new_distribution_2
 
     def train_model(self, folder, round_nums=[], batch_size=64, epochs=30):
-        KofAgent.train_model_with_sum_tree(self, folder, round_nums, batch_size, epochs)
+        CommonAgent.train_model_with_sum_tree(self, folder, round_nums, batch_size, epochs)
 
     def value_test(self, folder, round_nums):
         # q值分布可视化
@@ -239,9 +235,9 @@ def quantile_regression_loss(y_true, y_pred):
 
 # 分为数回归没概率投影操作，相对比较容易实现
 class QuantileRegressionDQN(DoubleDQN):
-    def __init__(self, role, action_num, reward_decay=0.99):
-
-        super().__init__(role=role, action_num=action_num, model_type='quantile_regression', reward_decay=reward_decay)
+    def __init__(self, role, action_num, functions, model_type='QuantileRegressionDQN'):
+        super().__init__(role=role, action_num=action_num, functions=functions,
+                         model_type=model_type)
         self.train_reward_generate = self.quantile_regression_dqn_train_data
 
     def choose_action(self, raw_data, action, random_choose=False):
@@ -254,7 +250,7 @@ class QuantileRegressionDQN(DoubleDQN):
             return ans.sum(axis=2).argmax()
 
     def build_model(self):
-        shared_model = build_stacked_rnn_model(self)
+        shared_model = self.base_network_build_fn()
         t_status = shared_model.output
         probability_distribution_layers = []
         t_status = layers.BatchNormalization()(t_status)
@@ -304,13 +300,12 @@ class QuantileRegressionDQN(DoubleDQN):
 
     def train_model(self, folder, round_nums=[], batch_size=64, epochs=30):
         # KofAgent.train_model(self, folder, round_nums, batch_size, epochs)
-        KofAgent.train_model_with_sum_tree(self, folder, round_nums, batch_size, epochs)
+        CommonAgent.train_model_with_sum_tree(self, folder, round_nums, batch_size, epochs)
 
     def value_test(self, folder, round_nums):
         # q值分布可视化
         raw_env = self.raw_env_generate(folder, round_nums)
         train_env, train_index = self.train_env_generate(raw_env)
-        train_reward, td_error, n_action = self.train_reward_generate(raw_env, train_env, train_index)
         t = model.predict_model.predict([env for env in train_env])
         train_reward_expection = np.sum(t, axis=2)
         # 这里是训练数据但是也可以拿来参考,查看是否过估计，目前所有的模型几乎都会过估计

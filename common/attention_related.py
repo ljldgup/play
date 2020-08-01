@@ -103,37 +103,6 @@ class Attention(layers.Layer):
         return (input_shape[0], input_shape[2])  # batch_size, embedding_dim
 
 
-class BahdanauAttention(tf.keras.layers.Layer):
-    # units 是query, values计算权重前进行线性变换的大小
-    def __init__(self, units):
-        super(BahdanauAttention, self).__init__()
-        self.W1 = tf.keras.layers.Dense(units)
-        self.W2 = tf.keras.layers.Dense(units)
-        self.V = tf.keras.layers.Dense(1)
-
-    def call(self, query, values):
-        # query 初始是encoder rnn输出的最后一个隐藏状态，之后是decoder 的最后一个隐藏状态
-        # query hidden state shape == (batch_size, hidden size)，
-        # query_with_time_axis shape == (batch_size, 1, hidden size) # 为了广播
-
-        query_with_time_axis = tf.expand_dims(query, 1)
-
-        # score shape == (batch_size, max_length, 1)
-        # we get 1 at the last axis because we are applying score to self.V
-        # the shape of the tensor before applying self.V is (batch_size, max_length, units)
-        score = self.V(tf.nn.tanh(
-            self.W1(query_with_time_axis) + self.W2(values)))
-
-        # attention_weights shape == (batch_size, max_length, 1)
-        attention_weights = tf.nn.softmax(score, axis=1)
-
-        # context_vector shape after sum == (batch_size, hidden_size)
-        context_vector = attention_weights * values
-        context_vector = tf.reduce_sum(context_vector, axis=1)
-
-        return context_vector, attention_weights
-
-
 # 这里是从tensowflow官网拷下来的
 # 用的公式是luong attention的，不知道为什么命名为BahdanauAttention
 class BahdanauAttention(tf.keras.layers.Layer):
@@ -169,20 +138,7 @@ class BahdanauAttention(tf.keras.layers.Layer):
         return context_vector, attention_weights
 
 
-class PositionalEncoding(tf.keras.layers.Layer):
-    def __init__(self, max_steps, max_dims, dtype=tf.float32, **kwargs):
-        super().__init__(dtype=dtype, **kwargs)
-        if max_dims % 2 == 1:
-            max_dims += 1  # max_dims must be even
-        p, i = np.meshgrid(np.arange(max_steps), np.arange(max_dims // 2))
-        pos_emb = np.empty((1, max_steps, max_dims))
-        pos_emb[0, :, ::2] = np.sin(p / 10000 ** (2 * i / max_dims)).T
-        pos_emb[0, :, 1::2] = np.cos(p / 10000 ** (2 * i / max_dims)).T
-        self.positional_embedding = tf.constant(pos_emb.astype(self.dtype))
 
-    def call(self, inputs):
-        shape = tf.shape(inputs)
-        return inputs + self.positional_embedding[:, :shape[-2], :shape[-1]]
 
 
 if __name__ == '__main__':

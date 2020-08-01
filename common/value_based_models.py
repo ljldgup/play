@@ -4,12 +4,10 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.keras import backend as K
 from matplotlib import pyplot as plt
-from kof.kof_agent import KofAgent, train_model_1by1
+from common.agent import CommonAgent
 from tensorflow.keras import layers
 from tensorflow.python.keras import Model
 from tensorflow.keras.optimizers import Adam
-from kof.kof_command_mame import get_action_num
-from kof.shared_model import build_multi_attention_model, build_rnn_attention_model, build_stacked_rnn_model
 
 '''
 可调的点
@@ -29,6 +27,7 @@ reward比例:不能太小或者太大都容易过估计，reward 从30 扩大到
 减小过估计的几个注意点
 经过一定计算后再更新target模型，不是每次训练后都加入，这点最重要
 最后几层使用bn层也会造成很明显的过估计，目前加一层，不加几乎无法收敛,怀疑网络是否真的有效？？
+去掉输出位置的bn层以后收敛效果好了一些，小批量数据用bn层效果貌似不好
 reward注意不要计入多余的值, reward的范围不能太大太小，在±0.1-1左右
 
 训练时可以对训练的值进行裁剪，裁剪区间对模型训练也有影响，区间太小，减小溢出值将成为网络主要梯度来源
@@ -45,20 +44,21 @@ def dqn_loss(y_true, y_pred):
     loss = tf.reduce_mean(delta * delta * sign)
     return loss
 
+
 # 普通DDQN，输出分开成多个fc，再合并
 # 这种方法违背网络共享信息的特点
 # 位置距离卷积 + lstm + fc
 # 接近BN层貌似一定程度上会导致过估计，所以暂时删掉
-class DoubleDQN(KofAgent):
+class DoubleDQN(CommonAgent):
 
-    def __init__(self, role, action_num, model_type='double_dqn'):
-
-        super().__init__(role=role, action_num=action_num, model_type=model_type)
+    def __init__(self, role, action_num, functions, model_type='double_dqn'):
+        super().__init__(role=role, action_num=action_num, functions=functions,
+                         model_type=model_type)
         # 把target_model移到value based文件中,因为policy based不需要
         self.train_reward_generate = self.double_dqn_train_data
 
     def build_model(self):
-        shared_model = build_stacked_rnn_model(self)
+        shared_model = self.base_network_build_fn()
         # shared_model = build_multi_attention_model(self.input_steps)
         t_status = shared_model.output
         output = layers.Dense(self.action_num, kernel_initializer='he_uniform')(t_status)
@@ -141,7 +141,7 @@ class DoubleDQN(KofAgent):
 
     def save_model(self, ):
         self.weight_copy()
-        KofAgent.save_model(self)
+        CommonAgent.save_model(self)
 
     def value_test(self, folder, round_nums):
         # q值分布可视化
@@ -177,12 +177,13 @@ class DoubleDQN(KofAgent):
 # 将衰减降低至0.94，去掉了上次动作输入，将1p embedding带宽扩展到8，后效果比之前好了很多
 # 但动作比较集中
 class DuelingDQN(DoubleDQN):
-    def __init__(self, role, action_num, model_type='dueling_dqn'):
-        super().__init__(role=role, action_num=action_num, model_type=model_type)
+    def __init__(self, role, action_num, functions, model_type='dueling_dqn', ):
+        super().__init__(role=role, action_num=action_num, functions=functions,
+                         model_type=model_type)
 
     def build_model(self):
         # shared_model = build_stacked_rnn_model(self)
-        shared_model = build_rnn_attention_model(self)
+        shared_model = self.base_network_build_fn()
 
         # shared_model = build_multi_attention_model(self)
         t_status = shared_model.output
@@ -202,47 +203,5 @@ class DuelingDQN(DoubleDQN):
         return model
 
 
-def train_model(model, folders):
-    print('-----------------------------')
-    print('train ', model.model_name)
-    # 在刚开始训练网络的时候使用
-    model.multi_steps = 2
-    for i in folders:
-        try:
-            print('train ', i)
-            # model.train_model(i)
-            train_model_1by1(model, i, range(10))
-            # 这种直接拷贝的效果和nature DQN其实没有区别。。所以放到外层去拷贝，训练时应该加大拷贝的间隔
-            # 改成soft copy
-
-        except:
-            traceback.print_exc()
-        if i % 3:
-            model.weight_copy()
-
-
 if __name__ == '__main__':
-    # models = [DuelingDQN('iori'), DoubleDQN('iori')]
-    model = DuelingDQN('iori', get_action_num('iori'))
-    # t = model.operation_analysis(5)
-    # train_model_1by1(model, range(1, 2), range(1, 11))
-    # model.save_model()
-    # t = model.operation_analysis(1)
-
-    raw_env = model.raw_env_generate(3, [20])
-    train_env, train_index = model.train_env_generate(raw_env)
-    train_reward, td_error, n_action = model.double_dqn_train_data(raw_env, train_env, train_index)
-    # 这里100 对应的是 raw_env 中 100+input_steps左右位置
-    t = model.predict_model.predict([np.expand_dims(env[100], 0) for env in train_env])
-    # t = model.predict_model.predict([env for env in train_env])
-    # output = model.output_test([ev[50].reshape(1, *ev[50].shape) for ev in train_env])
-    # train_reward[range(len(n_action[1])), n_action[1]]
-    # model.model_test(1, [1])
-    # t = model.operation_analysis(5)
-    # 查看训练数据是否对的上
-    '''
-    index = 65
-    train_index[index], raw_env['action'].reindex(train_index).values[index], raw_env['reward'].reindex(
-        train_index).values[index], [np.expand_dims(env[index], 0) for env in train_env]
-    '''
-
+    pass

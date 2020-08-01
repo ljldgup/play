@@ -1,0 +1,31 @@
+
+
+cpu = manager:machine().devices[":maincpu"]
+mem = cpu.spaces["program"]
+frames = 1
+freq = 30
+team = 0
+function test()
+    frames=frames+1
+    
+    --每freq帧输出一次，freq可调，太大太小都不太合适
+    if(frames>freq)
+    then
+        -- 设定成固定人物
+        p1 = mem:read_i8(0x10A84e)
+        p2 = mem:read_i8(0x10A861)
+        if p1 < 27
+        then
+            t = team % 3
+            mem:write_i8(0x10A84e, 27 + 3*t)
+            mem:write_i8(0x10A84f, 28 + 3*t)
+            mem:write_i8(0x10A850, 29 + 3*t)
+            --改颜色
+            mem:write_i8(0x10A862, 1)
+            team = team + 1
+        end
+        frames = 0      
+    end
+end
+
+emu.register_frame_done(test)

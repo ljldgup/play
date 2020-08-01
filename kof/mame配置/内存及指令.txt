@@ -1,3 +1,14 @@
+读取按键需要吧mame，keyboardprovider 设置为        win32，并且调用win32api.keybd_event提供扫描码才可以
+
+内存输出由lua脚本负责，lua脚本和游戏运行为单线程，所以没法sleep，只能注册hook，每帧渲染时调用，达到一定帧数时输出。
+
+mame设置家用机
+
+tab dip-switch setting mode on
+reset， abc一起按，加region设置为japan console，c退出
+然后tab dip-switch setting mode off 退出重启
+
+
 1p 人物  108171
 1p 动作  108172 + 108173
 1p血量   108239  死亡血量变成负数，把血量后面两位设置为d可以无限血

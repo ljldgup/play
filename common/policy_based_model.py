@@ -1,10 +1,8 @@
 import os
-import random
-import traceback
 
 import numpy as np
 
-from kof.kof_agent import KofAgent, train_model_1by1, get_maxsize_file
+from common.agent import CommonAgent, get_maxsize_file
 from tensorflow.keras import layers
 from tensorflow.python.keras import Input, Model
 from tensorflow.keras.optimizers import Adam
@@ -13,10 +11,10 @@ from tensorflow.keras import backend as K
 import tensorflow as tf
 from matplotlib import pyplot as plt
 
+from common.value_based_models import DoubleDQN
 from kof.kof_command_mame import get_action_num
-from kof.shared_model import build_multi_attention_model, build_stacked_rnn_model, build_rnn_attention_model
-from kof.sumtree import SumTree
-from kof.value_based_models import DoubleDQN
+from kof.kof_network import build_multi_attention_model, build_stacked_rnn_model, build_rnn_attention_model
+from common.sumtree import SumTree
 
 tf.compat.v1.disable_eager_execution()
 data_dir = os.getcwd()
@@ -57,9 +55,11 @@ class PPO_Loss(layers.Layer):
 
 class ActorCritic(DoubleDQN):
 
-    def __init__(self, role, action_num, model_type='AC_actor'):
-        self.critic = Critic(role, action_num=action_num, model_type=model_type + "_critic")
-        super().__init__(role=role, action_num=action_num, model_type=model_type)
+    def __init__(self, role, action_num, functions, model_type='AC_actor'):
+        self.critic = Critic(role, action_num=action_num, functions=functions,
+                             model_type=model_type + "_critic")
+        super().__init__(role=role, action_num=action_num, functions=functions,
+                         model_type=model_type)
         self.train_reward_generate = self.actor_tarin_data
         self.actor = self.predict_model
 
@@ -75,7 +75,7 @@ class ActorCritic(DoubleDQN):
 
     def build_model(self):
         # shared_model = self.build_shared_model()
-        shared_model = build_multi_attention_model(self.input_steps)
+        shared_model = self.base_network_build_fn()
         t_status = shared_model.output
         output = layers.Dense(self.action_num, activation='softmax')(t_status)
         model = Model(shared_model.input, output, name=self.model_type)
@@ -99,7 +99,7 @@ class ActorCritic(DoubleDQN):
         # 注意这里由于PG算法限制，数据只能用一次。。。用完概率分布就改变了，公式就不满足了，PPO对此作了改进
         print(self.model_type)
         # KofAgent.train_model_with_sum_tree(self, folder, round_nums=round_nums, batch_size=batch_size, epochs=1)
-        KofAgent.train_model(self, folder, round_nums, batch_size, epochs)
+        CommonAgent.train_model(self, folder, round_nums, batch_size, epochs)
         print('train_critic')
         self.critic.train_model(folder, round_nums=round_nums, batch_size=batch_size, epochs=epochs)
 
@@ -122,15 +122,16 @@ class ActorCritic(DoubleDQN):
 # 这里继承AC主要是为了用critic,以及函数save，load，weight_copy
 class PPO(ActorCritic):
 
-    def __init__(self, role, action_num, model_type='PPO_actor'):
-        ActorCritic.__init__(self, role=role, action_num=action_num, model_type=model_type)
+    def __init__(self, role, action_num, functions, model_type='PPO_actor'):
+        ActorCritic.__init__(self, role=role, action_num=action_num, functions=functions,
+                             model_type=model_type)
         # 用于训练的模型, 加额外的ppo损失
         self.trained_model = self.build_train_model()
         self.trained_model.set_weights(self.predict_model.get_weights())
 
     def build_model(self):
-        shared_model = build_stacked_rnn_model(self)
-        # shared_model = build_rnn_attention_model(self)
+        # shared_model = build_stacked_rnn_model(self)
+        shared_model = self.base_network_build_fn()
         # shared_model = build_multi_attention_model(self.input_steps)
         t_status = shared_model.output
         output = layers.Dense(self.action_num, activation='softmax')(t_status)
@@ -141,9 +142,9 @@ class PPO(ActorCritic):
 
     # 这个模型加了损失层PPO_Loss，用于训练
     def build_train_model(self):
-        # shared_model = build_attention_model(self.input_steps, self.action_num)
+        shared_model = build_rnn_attention_model(self)
         # shared_model = build_multi_attention_model(self.input_steps)
-        shared_model = build_stacked_rnn_model(self)
+        # shared_model = build_stacked_rnn_model(self)
         t_status = shared_model.output
         p = layers.Dense(self.action_num, activation='softmax', name='p')(t_status)
 
@@ -170,8 +171,10 @@ class PPO(ActorCritic):
         return [[reward_onehot, old_prob], td_error, [old_action, action[1]]]
 
     def train_model(self, folder, round_nums=[], batch_size=16, epochs=30):
-        # 先使用critic的td_error交叉熵训练actor，再训练critic
+        self.train_model_with_sum_tree(folder, round_nums, batch_size, epochs)
 
+    def train_model_with_sum_tree(self, folder, round_nums=[], batch_size=16, epochs=30):
+        # 先使用critic的td_error交叉熵训练actor，再训练critic
         print('train ', self.model_type)
 
         if not round_nums:
@@ -187,7 +190,7 @@ class PPO(ActorCritic):
         self.trained_model.set_weights(self.predict_model.get_weights())
         sum_tree = SumTree(abs(td_error))
         loss_history = []
-        print('train {}/{} {} epochs'.format(folder, round_nums, epochs))
+        print('train with sum_tree {}/{} {} epochs'.format(folder, round_nums, epochs))
         for e in range(epochs):
             loss = 0
             for i in range(len(train_index) // batch_size):
@@ -241,12 +244,13 @@ class PPO(ActorCritic):
 
 # DDPG适合连续的动作空间，用在这里不合适
 class DDPG(ActorCritic):
-    def __init__(self, role, action_num, model_type='PPO_actor'):
-        ActorCritic.__init__(self, role=role, model_type=model_type, action_num=action_num)
+    def __init__(self, role, action_num, functions, model_type='PPO_actor'):
+        ActorCritic.__init__(self, role=role, functions=functions, model_type=model_type,
+                             action_num=action_num)
         self.copy_interval = 1
 
     def build_model(self):
-        shared_model = build_stacked_rnn_model(self)
+        shared_model = self.base_network_build_fn()
         t_status = shared_model.output
         output = layers.Dense(self.action_num)(t_status)
         model = Model(shared_model.input, output, name=self.model_type)
@@ -264,15 +268,17 @@ class DDPG(ActorCritic):
 
 
 class Critic(DoubleDQN):
-    def __init__(self, role, action_num, model_type='critic'):
+    def __init__(self, role, action_num, functions, model_type='critic'):
         # policy gradient 应该是个连续的情况，所以这里用比较高的reward_decay
-        DoubleDQN.__init__(self, role=role, action_num=action_num, model_type=model_type)
+        DoubleDQN.__init__(self, role=role, action_num=action_num, functions=functions,
+                           model_type=model_type)
         self.train_reward_generate = self.critic_dqn_train_data
         # 这设置一个较大multi_steps值
         self.multi_steps = 2
 
     def build_model(self):
-        shared_model = build_stacked_rnn_model(self)
+        # shared_model = build_stacked_rnn_model(self)
+        shared_model = self.base_network_build_fn()
         # shared_model = build_multi_attention_model(self.input_steps)
         t_status = shared_model.output
         # critic只输出和状态有关的v值
@@ -338,7 +344,7 @@ if __name__ == '__main__':
     # model2.operation_analysis(1)
 
     model2.model_test(5, [1])
-    raw_env = model2.raw_data_generate(1, [1])
+    raw_env = model2.raw_env_generate(7, [1])
     train_env, train_index = model2.train_env_generate(raw_env)
     train_distribution, td_error, n_action = model2.actor_tarin_data(raw_env, train_env, train_index)
     t = model2.predict_model.predict([np.expand_dims(env[100], 0) for env in train_env])
