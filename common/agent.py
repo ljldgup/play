@@ -4,10 +4,9 @@ import time
 import traceback
 import types
 
-import pandas as pd
 import numpy as np
 from tensorflow.python.keras import Model
-from kof.kof_command_mame import global_set, role_commands
+from kof.kof_command_mame import role_commands
 from common.sumtree import SumTree
 
 
@@ -15,7 +14,7 @@ class RandomAgent:
     def __init__(self, **kwargs):
         self.model_name = 'random'
         self.role = kwargs['role']
-        self.action_num = len(role_commands[self.role])
+        self.action_num = kwargs['action_num']
         self.input_steps = 1
         # 操作间隔步数
         self.operation_interval = 2
@@ -92,14 +91,14 @@ class CommonAgent:
 
         # multi_steps 配合decay使网络趋向真实数据，但multi_steps加大会导致r波动大
         # 这里调大了间隔后，multi_steps应该减小一些
-        self.multi_steps = 2
+        self.multi_steps = 1
 
         # 模型参数拷贝间隔
         self.copy_interval = 3
         # reward 缩减比例
         self.reward_scale_factor = 30
         # 学习率
-        self.lr = 1e-6
+        self.lr = 1e-7
         # build_model由子类提供
         self.predict_model = self.build_model()
         self.target_model = self.build_model()
@@ -174,21 +173,27 @@ class CommonAgent:
         self.record['total_epochs'] += epochs
 
     # Prioritized Replay DQN 使用sumtree 生成 batch
-    def train_model_with_sum_tree(self, folder, round_nums=[], batch_size=16, epochs=30):
+    # 由于sumtree是根据td_error随机采样，每个batch或者epochs都重新采样，返回的loss波动很大，几乎不收敛
+    # 将采样改成batch为基础单元，改成所有训练均用同一的采样
+    def train_model_with_sum_tree(self, folder, round_nums=[], batch_size=8, epochs=30):
         if not round_nums:
             round_nums = get_maxsize_file(folder)
         # raw_env_generate,train_env_generate 具体的agent实现
         raw_env = self.raw_env_generate(folder, round_nums)
         train_env, train_index = self.train_env_generate(raw_env)
         train_target, td_error, action = self.train_reward_generate(raw_env, train_env, train_index)
-        sum_tree = SumTree(abs(td_error))
+
+        # 根据batch内td error绝对值和生成sumtree
+        batch_sum_tree = self.get_batch_sumtree(td_error, batch_size)
         loss_history = []
         print('train with sum tree {}/{} {} epochs'.format(folder, round_nums, epochs))
+        batch_index = batch_sum_tree.gen_batch_index(len(td_error) // batch_size)
         for e in range(epochs):
             loss = 0
-            for i in range(len(train_target) // batch_size):
-                index = sum_tree.gen_batch_index(batch_size)
-                loss += self.predict_model.train_on_batch([env[index] for env in train_env], train_target[index])
+            for idx in batch_index:
+                loss += self.predict_model.train_on_batch(
+                    [env[idx * batch_size:idx * batch_size + batch_size] for env in train_env],
+                    train_target[idx * batch_size:idx * batch_size + batch_size])
             loss_history.append(loss)
             print(loss / (len(train_index) // batch_size))
 
@@ -203,6 +208,17 @@ class CommonAgent:
             print(o, n, td)
         '''
         return loss_history
+
+    # 根据batch内td error绝对值和生成sumtree
+    # td_error 形状num,error
+    def get_batch_sumtree(self, td_error, batch_size):
+        batch_num = len(td_error) // batch_size
+        batch_td_error = td_error[:batch_num * batch_size].reshape(batch_num, batch_size, -1)
+
+        batch_td_error = abs(batch_td_error)
+        batch_td_error = batch_td_error.sum(axis=1).flatten()
+        batch_td_error = np.r_[batch_td_error, abs(td_error[batch_num * batch_size:]).sum()]
+        return SumTree(batch_td_error)
 
     def save_model(self):
         print('save {}/model/{}_{}_{}'.format(data_dir, self.role, self.model_type, self.network_type))
@@ -224,14 +240,11 @@ class CommonAgent:
 
     # 游戏运行时把原始环境输入，分割成模型能接受的输入，在具体的模型可以修改
     def raw_env_data_to_input(self, raw_data, action):
-        # 将能量，爆气，上次执行的动作都只输入最后一次，作为decode的query
-        return (raw_data[:, :, 0], raw_data[:, :, 1], raw_data[:, -1:, 2], raw_data[:, -1:, 3],
-                raw_data[:, :, 4:6], raw_data[:, :, 6:8], raw_data[:, -1:, 8], raw_data[:, -1:, 9],
-                action[:, -1:])
+        pass
 
-    # 这里返回的list要和raw_env_data_to_input返回的大小一样
+    # 这里返回的list要和raw_env_data_to_input返回的尺寸匹配
     def empty_env(self):
-        return [[], [], [], [], [], [], [], [], []]
+        pass
 
     def get_record(self):
         if os.path.exists('{}/model/{}_{}_{}_record'.format(data_dir, self.role, self.model_type, self.network_type)):

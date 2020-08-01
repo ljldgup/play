@@ -142,7 +142,7 @@ class PPO(ActorCritic):
 
     # 这个模型加了损失层PPO_Loss，用于训练
     def build_train_model(self):
-        shared_model = build_rnn_attention_model(self)
+        shared_model = self.base_network_build_fn()
         # shared_model = build_multi_attention_model(self.input_steps)
         # shared_model = build_stacked_rnn_model(self)
         t_status = shared_model.output

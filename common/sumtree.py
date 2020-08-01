@@ -26,7 +26,10 @@ class SumTree:
 
     def sample(self, s):
         if s > self.td_error.sum():
-            raise Exception('大于td_error最大值')
+            return len(self.td_error)
+        if s < 0:
+            return 0
+
         level = 0
         idx = 0
         while level < len(self.sumtree):
@@ -45,17 +48,24 @@ class SumTree:
 
     def gen_batch_index(self, batch_num):
         td_error_sum = self.td_error.sum()
+        # 这里增加一个采样基准值，防止采样过于集中
         sample_base_value = np.linspace(0, (batch_num - 1) / batch_num * td_error_sum, batch_num)
-        sample_random_value = np.random.rand(batch_num) * td_error_sum / batch_num
+        # np.random.rand 返回0-1值，-0.5使其均值为0
+        sample_random_value = (np.random.randn(batch_num) - 0.5) * td_error_sum / batch_num
         sample_value = sample_base_value + sample_random_value
+        # sample_value = np.random.uniform(0, td_error_sum, batch_num)
         # print(sample_value)
         return [self.sample(v) for v in sample_value]
 
 
 if __name__ == '__main__':
+    td_error = [3, 10, 12, 4, 1, 2, 8, 2]
     # t = sum_tree(np.array(range(100))[np.random.permutation(range(100))])
-    t = SumTree(np.array([3, 10, 12, 4, 1, 2, 8, 2]))
+    sum_tree = SumTree(np.array(td_error))
     # [level[0:9] for level in t.sumtree]
     # [sum(level) for level in t.sumtree]
     # 貌似固定的td_error顺序，输出十固定的，输入之前需要先
-    [t.td_error[t.sample(i)] for i in range(t.td_error.sum())]
+    t = np.array(sum_tree.gen_batch_index(1000))
+    hist = [len(t[t == i]) for i in range(len(td_error))]
+    hist = np.array(hist)
+    hist /= hist.min()
