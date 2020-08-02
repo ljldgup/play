@@ -9,7 +9,7 @@ from common.distributional_dqn_model import DistributionalDQN
 from common.policy_based_model import PPO
 from common.value_based_models import DuelingDQN
 from kof.kof_command_mame import get_action_num
-from kof.kof_network import build_rnn_attention_model
+from kof.kof_network import build_rnn_attention_model, build_stacked_rnn_model
 
 data_dir = os.getcwd()
 env_colomns = ['role1_action', 'role2_action',
@@ -31,7 +31,6 @@ input_colomns = ['role1_action', 'role2_action',
 def raw_env_generate(self, folder, round_nums):
     if round_nums:
         raw_env_list = []
-
         for i in range(0, len(round_nums)):
             if os.path.exists('{}/data/{}/{}.env'.format(data_dir, folder, round_nums[i])):
                 env = np.loadtxt('{}/data/{}/{}.env'.format(data_dir, folder, round_nums[i]))
@@ -111,7 +110,8 @@ def train_env_generate(self, raw_env):
         else:
             data = env.values
             data = data.reshape(1, *data.shape)
-            action = env['action'].values
+            # action为了和实时输入一致，去除最后一次动作，因为这次动作是根据当前环境预测出来的
+            action = env['action'].values[:-1]
             action = action.reshape(1, *action.shape)
             split_data = self.raw_env_data_to_input(data, action)
             for i in range(len(split_data)):
@@ -125,11 +125,14 @@ def train_env_generate(self, raw_env):
 
 
 # 游戏运行时把原始环境输入，分割成模型能接受的输入，在具体的模型可以修改
+# 对应input_colomns
 def raw_env_data_to_input(self, raw_data, action):
     # 将能量，爆气，上次执行的动作都只输入最后一次，作为decode的query
     return (raw_data[:, :, 0], raw_data[:, :, 1], raw_data[:, -1:, 2], raw_data[:, -1:, 3],
             raw_data[:, :, 4:6], raw_data[:, :, 6:8], raw_data[:, -1:, 8], raw_data[:, -1:, 9],
-            action[:, -1:])
+
+            # 注意action是上一步的，这里设置一个超长的步长，来保证只选取上一次的动作
+            action[:, -self.operation_interval::100])
 
 
 # 这里返回的list要和raw_env_data_to_input返回的大小一样
@@ -138,18 +141,21 @@ def empty_env(self):
 
 
 if __name__ == '__main__':
-    functions = [build_rnn_attention_model, raw_env_generate, train_env_generate,
-                 raw_env_data_to_input, empty_env]
+    functions = [
+        # build_rnn_attention_model,
+        build_stacked_rnn_model,
+        raw_env_generate, train_env_generate,
+        raw_env_data_to_input, empty_env]
     # model1 = PPO('iori', get_action_num('iori'), functions)
-    # model1 = DuelingDQN('iori', get_action_num('iori'), functions)
-    model1 = DistributionalDQN('iori', get_action_num('iori'), functions)
-
-    t = model1.operation_analysis(3)
-    # train_model_1by1(model1, range(1, 2), range(1, 11))
+    model1 = DuelingDQN('iori', get_action_num('iori'), functions)
+    # model1 = DistributionalDQN('iori', get_action_num('iori'), functions)
+    model1.model_test(4, [1])
+    # t = model1.operation_analysis(3)
+    # train_model_1by1(model1, [4], range(1, 11))
     model1.save_model()
     # t = model.operation_analysis(1)
-
-    raw_env = model1.raw_env_generate(3, [20])
+    '''
+    raw_env = model1.raw_env_generate(4, [20])
     train_env, train_index = model1.train_env_generate(raw_env)
     train_reward, td_error, n_action = model1.train_reward_generate(raw_env, train_env, train_index)
     # 这里100 对应的是 raw_env 中 100+input_steps左右位置
@@ -165,4 +171,3 @@ if __name__ == '__main__':
     train_index[index], raw_env['action'].reindex(train_index).values[index], raw_env['reward'].reindex(
         train_index).values[index], [np.expand_dims(env[index], 0) for env in train_env]
     '''
-'''

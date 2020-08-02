@@ -115,7 +115,7 @@ def train_on_mame(model, train=True, round_num=12):
                         # model.e_greedy = 0.5 + 0.6 * count // round_num
 
                     else:
-                        model.e_greedy = 0.98
+                        model.e_greedy = 1
 
                     print('greedy:', model.e_greedy)
 
@@ -181,8 +181,8 @@ if __name__ == '__main__':
     # dqn_model = QuantileRegressionDQN()
     # dqn_model = RandomAgent('iori')
     round_num = 30
-    folder_num, count = train_on_mame(dqn_model, False)
-    # folder_num, count = train_on_mame(dqn_model, True, round_num)
+    # folder_num, count = train_on_mame(dqn_model, False)
+    folder_num, count = train_on_mame(dqn_model, True, round_num)
     # dqn_model.train_model(folder_num, epochs=20)
     # dqn_model.save_model()
 
