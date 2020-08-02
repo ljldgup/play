@@ -11,7 +11,7 @@ from common.policy_based_model import PPO
 from common.value_based_models import DuelingDQN
 from kof.kof_agent import raw_env_generate, train_env_generate, empty_env, raw_env_data_to_input
 from kof.kof_command_mame import operation, restart, global_set, get_action_num
-from kof.kof_network import build_rnn_attention_model
+from kof.kof_network import build_rnn_attention_model, build_stacked_rnn_model
 
 '''
 mame.ini keyboardprovider设置成win32不然无法接受键盘输入
@@ -87,14 +87,15 @@ def train_on_mame(model, train=True, round_num=12):
                             record_file = '{}.'.format(int(count))
                             np.savetxt(data_dir + '/' + record_file + 'act', np.array(tmp_action))
                             np.savetxt(data_dir + '/' + record_file + 'env', np.array(tmp_env))
-                            # 查看刚刚动作对不对
+                            # 查看刚刚动作对不对，因为e-greedy会有少数随机，
+                            # 如果很大比例是false说明训练数据和实时数据不一样
                             model.model_test(folder_num, [count])
                             if train:
                                 print(str(time.asctime(time.localtime(time.time()))))
                                 model.train_model(folder_num, [count], epochs=epochs)
                                 if count % model.copy_interval == 0:
                                     model.save_model()
-                            # 观察每次训练后的情况，如果变化过大的话，说明学习率过高
+                            # 观察每次训练后的情况，如果变化过大的话，说明学习率太大
                             dqn_model.model_test(folder_num, [count])
                             print("重开")
 
@@ -107,9 +108,7 @@ def train_on_mame(model, train=True, round_num=12):
                     if train:
                         # multi_steps 逐渐较少到1，起一定的修正效果， e_greedy增大至1
                         # 每过1/5步子减少1
-                        model.multi_steps = 2 // (5 * count // round_num + 1) + 1
-                        # t = count / round_num + 0.6
-                        # model.e_greedy = 0.95 if t >= 1 else t
+                        # model.multi_steps = 2 // (5 * count // round_num + 1) + 1
                         # 随机生成e_greedy
                         # model.e_greedy = 99.7% [-3*sigma,3*sigma] 95.4% [-2*sigma,2*sigma], 68.3% [-sigma,sigma]
                         model.e_greedy = 0.94 + 0.04 * np.random.randn()
@@ -130,8 +129,8 @@ def train_on_mame(model, train=True, round_num=12):
                     if len(tmp_env) % model.operation_interval == 0:
 
                         # 注意tmp_action比 tmp_env长度少1， 所以这里用tmp_action判断
-                        if len(tmp_action) < model.input_steps + 1:
-                            keys = model.choose_action(None, None, random_choose=True)
+                        if len(tmp_env) < model.input_steps:
+                            keys = 0
                         else:
                             keys = model.choose_action(np.array([tmp_env[-model.input_steps:]]),
                                                        np.array([tmp_action[-model.input_steps:]]),
@@ -162,7 +161,7 @@ def train_on_mame(model, train=True, round_num=12):
         s.kill()
         model.save_model()
         executor.shutdown()
-    return folder_num
+    return folder_num, count - 1
 
 
 if __name__ == '__main__':
@@ -170,22 +169,23 @@ if __name__ == '__main__':
 
     global_set(role)
     # dqn_model = DoubleDQN('iori')
-    functions = [  # build_stacked_rnn_model
-        build_rnn_attention_model,
-        raw_env_generate, train_env_generate,
-        raw_env_data_to_input, empty_env]
+    functions = [build_stacked_rnn_model,
+                 # build_rnn_attention_model,
+                 raw_env_generate, train_env_generate,
+                 raw_env_data_to_input, empty_env]
     # dqn_model = PPO('iori', get_action_num('iori'), functions)
-    # dqn_model = DuelingDQN('iori', get_action_num('iori'), functions)
-    dqn_model = DistributionalDQN('iori', get_action_num('iori'), functions)
+    dqn_model = DuelingDQN('iori', get_action_num('iori'), functions)
+    # dqn_model = DistributionalDQN('iori', get_action_num('iori'), functions)
 
     # QuantileRegressionDQN有bug，会过估计，暂时不明白错误在哪里
     # dqn_model = QuantileRegressionDQN()
     # dqn_model = RandomAgent('iori')
-    round_num = 42
-    folder_num = train_on_mame(dqn_model, True, round_num)
+    round_num = 30
+    folder_num, count = train_on_mame(dqn_model, False)
+    # folder_num, count = train_on_mame(dqn_model, True, round_num)
     # dqn_model.train_model(folder_num, epochs=20)
     # dqn_model.save_model()
 
-    dqn_model.operation_analysis(folder_num)
-    dqn_model.model_test(folder_num, [round_num])
-    dqn_model.value_test(folder_num, [1])
+    # dqn_model.operation_analysis(folder_num)
+    # dqn_model.model_test(folder_num, [count])
+    # dqn_model.value_test(folder_num, [count])
