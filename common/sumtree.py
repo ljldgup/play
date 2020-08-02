@@ -26,7 +26,7 @@ class SumTree:
 
     def sample(self, s):
         if s > self.td_error.sum():
-            return len(self.td_error)
+            return len(self.td_error) - 1
         if s < 0:
             return 0
 
@@ -46,14 +46,14 @@ class SumTree:
             level += 1
         return idx
 
-    def gen_batch_index(self, batch_num):
+    def get_index(self, num):
         td_error_sum = self.td_error.sum()
         # 这里增加一个采样基准值，防止采样过于集中
-        sample_base_value = np.linspace(0, (batch_num - 1) / batch_num * td_error_sum, batch_num)
+        sample_base_value = np.linspace(0, (num - 1) / num * td_error_sum, num)
         # np.random.rand 返回0-1值，-0.5使其均值为0
-        sample_random_value = (np.random.randn(batch_num) - 0.5) * td_error_sum / batch_num
+        sample_random_value = (np.random.randn(num) - 0.5) * td_error_sum / num
         sample_value = sample_base_value + sample_random_value
-        # sample_value = np.random.uniform(0, td_error_sum, batch_num)
+        # sample_value = np.random.uniform(0, td_error_sum, num)
         # print(sample_value)
         return [self.sample(v) for v in sample_value]
 
@@ -65,7 +65,7 @@ if __name__ == '__main__':
     # [level[0:9] for level in t.sumtree]
     # [sum(level) for level in t.sumtree]
     # 貌似固定的td_error顺序，输出十固定的，输入之前需要先
-    t = np.array(sum_tree.gen_batch_index(1000))
+    t = np.array(sum_tree.get_index(1000))
     hist = [len(t[t == i]) for i in range(len(td_error))]
     hist = np.array(hist)
     hist /= hist.min()

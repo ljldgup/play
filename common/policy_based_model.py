@@ -164,16 +164,16 @@ class PPO(ActorCritic):
         old_prob = self.target_model.predict(train_env)
         old_action = old_prob.argmax(axis=1)
         # 这里要用zero将无关动作置0，避免计入损失
-        reward_onehot = np.zeros(shape=(len(action[1]), self.action_num))
+        reward_onehot = np.zeros_like(old_prob)
         # 这里用adv或者te_error都可以
         # reward_onehot[range(len(action[1])), action[1]] = adv[:, 0]
         reward_onehot[range(len(action[1])), action[1]] = td_error
         return [[reward_onehot, old_prob], td_error, [old_action, action[1]]]
 
-    def train_model(self, folder, round_nums=[], batch_size=16, epochs=30):
+    def train_model(self, folder, round_nums=[], batch_size=32, epochs=30):
         self.train_model_with_sum_tree(folder, round_nums, batch_size, epochs)
 
-    def train_model_with_sum_tree(self, folder, round_nums=[], batch_size=16, epochs=30):
+    def train_model_with_sum_tree(self, folder, round_nums=[], batch_size=32, epochs=30):
         # 先使用critic的td_error交叉熵训练actor，再训练critic
         print('train ', self.model_type)
 
@@ -189,34 +189,21 @@ class PPO(ActorCritic):
 
         self.trained_model.set_weights(self.predict_model.get_weights())
         sum_tree = SumTree(abs(td_error))
-        loss_history = []
+        index = sum_tree.get_index(len(td_error))
         print('train with sum_tree {}/{} {} epochs'.format(folder, round_nums, epochs))
-        for e in range(epochs):
-            loss = 0
-            for i in range(len(train_index) // batch_size):
-                index = sum_tree.gen_batch_index(batch_size)
-                # train_model loss层没有y
-                loss += self.trained_model.train_on_batch([env[index] for env in train_env])
-            print(loss / (len(train_index) // batch_size))
-            loss_history.append(loss)
+        # train_model loss层没有y
+        history = self.predict_model.fit([env[index] for env in train_env], batch_size=batch_size,
+                                         epochs=epochs, verbose=2)
 
         self.record['total_epochs'] += epochs
-        # PPO的参数每轮都需要更新一次，概率分布不能太远
+        # PPO的参数每轮都需要更新一次，概率q分布不能太远
         self.predict_model.set_weights(self.trained_model.get_weights())
         # target_model提供q分布，所以应该也要更新
         self.target_model.set_weights(self.trained_model.get_weights())
 
-        '''
-        # 测试训练完后概率变化程度
-        p_latest = self.predict_model.predict([env for env in train_env[:-2]])
-        for p_new, p_old, adv in zip(p_latest[range(len(action[1])), action[1]],
-                                     train_target[1][range(len(action[1])), action[1]],
-                                     train_target[0][range(len(action[1])), action[1]]):
-            print(p_old, p_new, adv)
-        '''
         print('train_critic')
         self.critic.train_model(folder, round_nums=round_nums, batch_size=batch_size, epochs=epochs)
-        return loss_history
+        return history
 
     def value_test(self, folder, round_nums):
         # q值分布可视化
@@ -310,9 +297,8 @@ class Critic(DoubleDQN):
             next_reward = np.roll(next_reward, -1)
             # 从下一个round往上移动的，reward为0
             next_reward[time > 0] = 0
-            reward += next_reward
-            # reward += next_reward * self.reward_decay ** (i + 1)
-            # 加上target model第multi_steps+1个步骤的Q值
+            reward += next_reward * self.reward_decay ** (i + 1)
+        # 加上target model第multi_steps+1个步骤的Q值
         for i in range(self.multi_steps):
             next_q = np.roll(next_q, -1)
             # 从下一个round往上移动的，reward为0
@@ -320,19 +306,19 @@ class Critic(DoubleDQN):
         reward += next_q * self.reward_decay ** self.multi_steps
 
         td_error = reward - predict_model_prediction[range(len(train_index)), 0]
-        predict_model_prediction[range(len(train_index)), 0] = reward
         '''
         predict_model_prediction[predict_model_prediction > 4] = 4
         predict_model_prediction[predict_model_prediction < -4] = -4
         '''
-        return [predict_model_prediction, td_error, [None, action]]
+        train_reward = reward[:, np.newaxis]
+        return [train_reward, td_error, [None, action]]
 
 
 if __name__ == '__main__':
     # model1 = ActorCritic('iori')
     # model2 = Critic('iori')
 
-    model2 = PPO('iori', get_action_num('iori'))
+    # model2 = PPO('iori', get_action_num('iori'))
 
     # model2.train_model(1, [1])
     # model3 = DDPG('iori')

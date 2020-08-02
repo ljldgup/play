@@ -51,7 +51,7 @@ def train_model_1by1(model, folders, rounds):
             try:
                 print('train {}/{}'.format(i, r))
                 # model.train_model(i)
-                model.train_model(i, [r], epochs=15)
+                model.train_model(i, [r], epochs=55)
                 # 这种直接拷贝的效果和nature DQN其实没有区别。。所以放到外层去拷贝，训练时应该加大拷贝的间隔
                 # 改成soft copy
                 # model.soft_weight_copy()
@@ -164,18 +164,20 @@ class CommonAgent:
         raw_env = self.raw_env_generate(folder, round_nums)
         train_env, train_index = self.train_env_generate(raw_env)
         train_target, td_error, action = self.train_reward_generate(raw_env, train_env, train_index)
-        random_index = np.random.permutation(len(train_index))
+        # 感觉强化学习打乱数据的意义不大
+        # random_index = np.random.permutation(len(train_index))
         # verbose参数控制输出，这里每个epochs输出一次
-        self.predict_model.fit([env[random_index] for env in train_env], train_target[random_index],
+        history = self.predict_model.fit(train_env, train_target,
                                batch_size=batch_size,
                                epochs=epochs, verbose=2)
 
         self.record['total_epochs'] += epochs
+        return history
 
     # Prioritized Replay DQN 使用sumtree 生成 batch
     # 由于sumtree是根据td_error随机采样，每个batch或者epochs都重新采样，返回的loss波动很大，几乎不收敛
     # 将采样改成batch为基础单元，改成所有训练均用同一的采样
-    def train_model_with_sum_tree(self, folder, round_nums=[], batch_size=8, epochs=30):
+    def train_model_with_sum_tree(self, folder, round_nums=[], batch_size=32, epochs=30):
         if not round_nums:
             round_nums = get_maxsize_file(folder)
         # raw_env_generate,train_env_generate 具体的agent实现
@@ -184,9 +186,17 @@ class CommonAgent:
         train_target, td_error, action = self.train_reward_generate(raw_env, train_env, train_index)
 
         # 根据batch内td error绝对值和生成sumtree
-        batch_sum_tree = self.get_batch_sumtree(td_error, batch_size)
-        loss_history = []
+
         print('train with sum tree {}/{} {} epochs'.format(folder, round_nums, epochs))
+        sum_tree = SumTree(abs(td_error))
+        index = sum_tree.get_index(len(td_error))
+        history = self.predict_model.fit([env[index] for env in train_env], train_target[index],
+                               batch_size=batch_size,
+                               epochs=epochs, verbose=2)
+        self.record['total_epochs'] += epochs
+        '''
+        # 使用batch的td_error生成sumtree，容易引起cudnnlstm层出错，原因不明。。有可能使batch_size太小
+        batch_sum_tree = self.get_batch_sumtree(td_error, batch_size)
         batch_index = batch_sum_tree.gen_batch_index(len(td_error) // batch_size)
         for e in range(epochs):
             loss = 0
@@ -196,9 +206,7 @@ class CommonAgent:
                     train_target[idx * batch_size:idx * batch_size + batch_size])
             loss_history.append(loss)
             print(loss / (len(train_index) // batch_size))
-
-        self.record['total_epochs'] += epochs
-
+        '''
         '''
         # 测试训练完后概率变化程度
         new_r = self.predict_model.predict([env for env in train_env])
@@ -207,7 +215,7 @@ class CommonAgent:
                                      td_error):
             print(o, n, td)
         '''
-        return loss_history
+        return history
 
     # 根据batch内td error绝对值和生成sumtree
     # td_error 形状num,error
