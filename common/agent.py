@@ -88,9 +88,11 @@ class CommonAgent:
 
         # 操作间隔时间步数
         self.operation_interval = 3
+        # 由于action有间隔，输入序列第一个action所在的位置，方便提取action
+        self.action_begin_index = (self.input_steps - 1) % self.operation_interval
+        self.action_steps = (self.input_steps - 1) // self.operation_interval
 
         # multi_steps 配合decay使网络趋向真实数据，但multi_steps加大会导致r波动大
-        # 这里调大了间隔后，multi_steps应该减小一些
         self.multi_steps = 1
 
         # 模型参数拷贝间隔
@@ -168,8 +170,8 @@ class CommonAgent:
         # random_index = np.random.permutation(len(train_index))
         # verbose参数控制输出，这里每个epochs输出一次
         history = self.predict_model.fit(train_env, train_target,
-                               batch_size=batch_size,
-                               epochs=epochs, verbose=2)
+                                         batch_size=batch_size,
+                                         epochs=epochs, verbose=2)
 
         self.record['total_epochs'] += epochs
         return history
@@ -191,8 +193,8 @@ class CommonAgent:
         sum_tree = SumTree(abs(td_error))
         index = sum_tree.get_index(len(td_error))
         history = self.predict_model.fit([env[index] for env in train_env], train_target[index],
-                               batch_size=batch_size,
-                               epochs=epochs, verbose=2)
+                                         batch_size=batch_size,
+                                         epochs=epochs, verbose=2)
         self.record['total_epochs'] += epochs
         '''
         # 使用batch的td_error生成sumtree，容易引起cudnnlstm层出错，原因不明。。有可能使batch_size太小

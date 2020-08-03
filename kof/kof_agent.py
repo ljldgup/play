@@ -128,11 +128,11 @@ def train_env_generate(self, raw_env):
 # 对应input_colomns
 def raw_env_data_to_input(self, raw_data, action):
     # 将能量，爆气，上次执行的动作都只输入最后一次，作为decode的query
-    return (raw_data[:, :, 0], raw_data[:, :, 1], raw_data[:, -1:, 2], raw_data[:, -1:, 3],
-            raw_data[:, :, 4:6], raw_data[:, :, 6:8], raw_data[:, -1:, 8], raw_data[:, -1:, 9],
+    return (raw_data[:, :, 0], raw_data[:, :, 1], raw_data[:, :, 2], raw_data[:, :, 3],
+            raw_data[:, :, 4:6], raw_data[:, :, 6:8], raw_data[:, :, 8], raw_data[:, :, 9],
 
             # 注意action是上一步的，这里设置一个超长的步长，来保证只选取上一次的动作
-            action[:, -self.operation_interval::100])
+            action[:, self.action_begin_index:self.operation_interval:])
 
 
 # 这里返回的list要和raw_env_data_to_input返回的大小一样
@@ -142,20 +142,20 @@ def empty_env(self):
 
 if __name__ == '__main__':
     functions = [
-        # build_rnn_attention_model,
-        build_stacked_rnn_model,
+        build_rnn_attention_model,
+        # build_stacked_rnn_model,
         raw_env_generate, train_env_generate,
         raw_env_data_to_input, empty_env]
-    # model1 = PPO('iori', get_action_num('iori'), functions)
-    model1 = DuelingDQN('iori', get_action_num('iori'), functions)
+    model1 = PPO('iori', get_action_num('iori'), functions)
+    # model1 = DuelingDQN('iori', get_action_num('iori'), functions)
     # model1 = DistributionalDQN('iori', get_action_num('iori'), functions)
-    model1.model_test(4, [1])
+    # model1.model_test(4, [1])
     # t = model1.operation_analysis(3)
-    # train_model_1by1(model1, [4], range(1, 11))
-    model1.save_model()
+    # train_model_1by1(model1, [2], range(1, 4))
+    # model1.save_model()
     # t = model.operation_analysis(1)
-    '''
-    raw_env = model1.raw_env_generate(4, [20])
+
+    raw_env = model1.raw_env_generate(2, [3])
     train_env, train_index = model1.train_env_generate(raw_env)
     train_reward, td_error, n_action = model1.train_reward_generate(raw_env, train_env, train_index)
     # 这里100 对应的是 raw_env 中 100+input_steps左右位置
@@ -170,4 +170,5 @@ if __name__ == '__main__':
     index = 65
     train_index[index], raw_env['action'].reindex(train_index).values[index], raw_env['reward'].reindex(
         train_index).values[index], [np.expand_dims(env[index], 0) for env in train_env]
+    '''
     '''

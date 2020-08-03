@@ -29,7 +29,7 @@ def raise_expection(thread):
 def train_on_mame(model, train=True, round_num=12):
     executor = ThreadPoolExecutor(6)
     # 每次打完训练次数,太大容易极端化
-    epochs = 50
+    epochs = 40
 
     data_dir = os.getcwd() + '/data/'
     # 存放数据路径
@@ -89,26 +89,31 @@ def train_on_mame(model, train=True, round_num=12):
                             np.savetxt(data_dir + '/' + record_file + 'env', np.array(tmp_env))
                             # 查看刚刚动作对不对，因为e-greedy会有少数随机，
                             # 如果很大比例是false说明训练数据和实时数据不一样
+                            print('实时动作与训练数据输出动作比较')
                             model.model_test(folder_num, [count])
                             if train:
                                 print(str(time.asctime(time.localtime(time.time()))))
                                 model.train_model(folder_num, [count], epochs=epochs)
+                                # 注意copy_interval设置成1的话那么，每次训练实际上两个模型是一样的，就是nature dqn
                                 if count % model.copy_interval == 0:
                                     model.save_model()
                             # 观察每次训练后的情况，如果变化过大的话，说明学习率太大
+                            print('训练后动作变化情况')
                             dqn_model.model_test(folder_num, [count])
                             print("重开")
 
                     tmp_action = []
                     tmp_env = []
-
-                    # 注意这里train_interval设置成1的话那么，每次训练实际上两个模型是一样的，就是nature dqn
                     count += 1
 
                     if train:
-                        # multi_steps 逐渐较少到1，起一定的修正效果， e_greedy增大至1
                         # 每过1/5步子减少1
-                        # model.multi_steps = 2 // (5 * count // round_num + 1) + 1
+                        # multi_steps = 2 // (5 * count // round_num + 1) + 1
+                        multi_steps = 2
+                        if model.model_type.startswith('PPO'):
+                            model.critic.multi_steps = multi_steps
+                        else:
+                            model.multi_steps = multi_steps
                         # 随机生成e_greedy
                         # model.e_greedy = 99.7% [-3*sigma,3*sigma] 95.4% [-2*sigma,2*sigma], 68.3% [-sigma,sigma]
                         model.e_greedy = 0.94 + 0.04 * np.random.randn()
@@ -130,7 +135,8 @@ def train_on_mame(model, train=True, round_num=12):
 
                         # 注意tmp_action比 tmp_env长度少1， 所以这里用tmp_action判断
                         if len(tmp_env) < model.input_steps:
-                            keys = 0
+                            # 开局蹲防
+                            keys = 1
                         else:
                             keys = model.choose_action(np.array([tmp_env[-model.input_steps:]]),
                                                        np.array([tmp_action[-model.input_steps:]]),
@@ -150,6 +156,7 @@ def train_on_mame(model, train=True, round_num=12):
                         # executor.submit(raise_expection, t)
                     else:
                         # 如果不在操作的步长上，直接返回-1，不采取任何操作
+                        # -1代表没有任何操作，而0,5等都是回中或者防御，回对当前状态造成影响
                         keys = -1
 
                     tmp_action.append(keys)
@@ -169,12 +176,12 @@ if __name__ == '__main__':
 
     global_set(role)
     # dqn_model = DoubleDQN('iori')
-    functions = [build_stacked_rnn_model,
-                 # build_rnn_attention_model,
-                 raw_env_generate, train_env_generate,
-                 raw_env_data_to_input, empty_env]
-    # dqn_model = PPO('iori', get_action_num('iori'), functions)
-    dqn_model = DuelingDQN('iori', get_action_num('iori'), functions)
+    functions = [  # build_stacked_rnn_model,
+        build_rnn_attention_model,
+        raw_env_generate, train_env_generate,
+        raw_env_data_to_input, empty_env]
+    dqn_model = PPO('iori', get_action_num('iori'), functions)
+    # dqn_model = DuelingDQN('iori', get_action_num('iori'), functions)
     # dqn_model = DistributionalDQN('iori', get_action_num('iori'), functions)
 
     # QuantileRegressionDQN有bug，会过估计，暂时不明白错误在哪里
@@ -186,6 +193,6 @@ if __name__ == '__main__':
     # dqn_model.train_model(folder_num, epochs=20)
     # dqn_model.save_model()
 
-    # dqn_model.operation_analysis(folder_num)
-    # dqn_model.model_test(folder_num, [count])
-    # dqn_model.value_test(folder_num, [count])
+    dqn_model.operation_analysis(folder_num)
+    dqn_model.model_test(folder_num, [count])
+    dqn_model.value_test(folder_num, [count])

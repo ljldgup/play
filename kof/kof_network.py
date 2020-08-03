@@ -13,14 +13,14 @@ def general_input(self):
     role1_actions_embedding = layers.Embedding(512, 16, name='role1_actions_embedding')(role1_actions)
     role2_actions_embedding = layers.Embedding(512, 16, name='role2_actions_embedding')(role2_actions)
 
-    role1_energy = Input(shape=(1,), name='role1_energy')
+    role1_energy = Input(shape=(self.input_steps,), name='role1_energy')
     role1_energy_embedding = layers.Embedding(5, 2, name='role1_energy_embedding')(role1_energy)
-    role2_energy = Input(shape=(1,), name='role2_energy')
+    role2_energy = Input(shape=(self.input_steps,), name='role2_energy')
     role2_energy_embedding = layers.Embedding(5, 2, name='role2_energy_embedding')(role2_energy)
 
-    role1_baoqi = Input(shape=(1,), name='role1_baoqi')
+    role1_baoqi = Input(shape=(self.input_steps,), name='role1_baoqi')
     role1_baoqi_embedding = layers.Embedding(2, 1, name='role1_baoqi_embedding')(role1_baoqi)
-    role2_baoqi = Input(shape=(1,), name='role2_baoqi')
+    role2_baoqi = Input(shape=(self.input_steps,), name='role2_baoqi')
     role2_baoqi_embedding = layers.Embedding(2, 1, name='role2_baoqi_embedding')(role2_baoqi)
 
     role1_x_y = Input(shape=(self.input_steps, 2), name='role1_x_y')
@@ -31,34 +31,34 @@ def general_input(self):
     # normal_role_position = BatchNormalization()(role_position)
     # 这里加dense就是对最后一层坐标进行全连接，和timedistribute相同
     conv_role_position = layers.Conv1D(filters=8, kernel_size=2, strides=1, padding='same')(role_position)
-    # conv_role_position = BatchNormalization()(conv_role_position)
+    normal_conv_role_position = BatchNormalization()(conv_role_position)
     role_distance = layers.Subtract()([role1_x_y, role2_x_y])
     # normal_role_distance = BatchNormalization()(role_distance)
     role_abs_distance = layers.Lambda(lambda x: K.abs(x))(role_distance)
     # normal_role_abs_distance = BatchNormalization()(role_abs_distance)
     conv_role_distance = layers.Conv1D(filters=8, kernel_size=2, strides=1, padding='same')(role_distance)
-    # conv_role_distance = BatchNormalization()(conv_role_distance)
+    normal_conv_role_distance = BatchNormalization()(conv_role_distance)
 
-    last_action = Input(shape=(1,), name='last_action')
-    last_action_embedding = layers.Embedding(self.action_num, 16, name='last_action_embedding')(last_action)
+    actions_input = Input(shape=(self.action_steps,), name='last_action')
+    actions_embedding = layers.Embedding(self.action_num, 32, name='last_action_embedding')(actions_input)
 
-    self_input = [role1_actions, role2_actions, role1_energy, role2_energy,
-                  role1_x_y, role2_x_y, role1_baoqi, role2_baoqi, last_action]
+    model_input = [role1_actions, role2_actions, role1_energy, role2_energy,
+                   role1_x_y, role2_x_y, role1_baoqi, role2_baoqi, actions_input]
 
     encoder_input = [role1_actions_embedding, role2_actions_embedding,
                      # normal_role_position, normal_role_distance, normal_role_abs_distance,
                      role_position, role_distance, role_abs_distance,
-                     conv_role_distance, conv_role_position
+                     normal_conv_role_distance, normal_conv_role_position, role1_energy_embedding,
+                     role2_energy_embedding, role1_baoqi_embedding, role2_baoqi_embedding,
                      ]
-    query_input = [role1_energy_embedding, role2_energy_embedding,
-                   role1_baoqi_embedding, role2_baoqi_embedding, last_action_embedding]
+    decoder_output = actions_embedding
 
-    return self_input, encoder_input, query_input
+    return model_input, encoder_input, decoder_output
 
 
 # 多层rnn堆叠
 def build_stacked_rnn_model(self):
-    self_input, encoder_input, query_input = general_input(self)
+    model_input, encoder_input, decoder_output = general_input(self)
     self.network_type = 'stacked_rnn_model'
 
     # 分开做rnn效果不好
@@ -66,23 +66,21 @@ def build_stacked_rnn_model(self):
     concatenate_layers = layers.concatenate(encoder_input)
 
     # 目前 512 - 1024 的效果是最好的，但数据量较大
-    t = CuDNNLSTM(256, return_sequences=True)(concatenate_layers)
+    t = CuDNNLSTM(512, return_sequences=True)(concatenate_layers)
     t_status = CuDNNLSTM(1024)(t)
     # 双向lstm,效果不好
     # t_status = Bidirectional(CuDNNLSTM(1024))(concatenate_layers)
-    q = layers.Flatten()(layers.concatenate(query_input))
-    q = layers.Dense(1024)(q)
-    # 使用multiply能使模型变化更加大，效果稍微好一下
-    t_status = layers.multiply([t_status, q])
+    decoder_lstm = CuDNNLSTM(128)(decoder_output)
+    t_status = layers.concatenate([decoder_lstm, t_status])
+    # 不是同一内容起源的最好不要用add
     # t_status = layers.add([t_status, q])
-    # t_status = layers.concatenate(lstm_output)
     t_status = layers.Dense(512, kernel_initializer='he_uniform')(t_status)
     # 这里加bn层会造成过估计,不加的话又难以收敛。。
     t_status = BatchNormalization()(t_status)
     t_status = layers.LeakyReLU(0.05)(t_status)
     t_status = layers.Dense(256, kernel_initializer='he_uniform')(t_status)
     output = layers.LeakyReLU(0.05)(t_status)
-    shared_model = Model(self_input, output)
+    shared_model = Model(model_input, output)
     # 这里模型不能编译，不然后面无法扩充
     return shared_model
 
@@ -91,7 +89,7 @@ def build_stacked_rnn_model(self):
 def build_rnn_attention_model(self):
     # 基于rnn的编码器
     self.network_type = 'rnn_attention_model'
-    self_input, encoder_input, query_input = general_input(self)
+    model_input, encoder_input, decoder_output = general_input(self)
 
     # 目前来看在rnn前或中间加dense层效果很差
 
@@ -101,16 +99,17 @@ def build_rnn_attention_model(self):
     values, h, _ = CuDNNLSTM(1024, return_sequences=True, return_state=True)(encoder_concatenate)
     # 这里模仿解码器的过程，将上一次的输出和hidden state 与 encoder_input合并作为query，这里输入的query远小于h，是个问题。。
     # embedding后多了一个维度尺寸，压平才能与h conact
-    query = layers.Flatten()(layers.concatenate(query_input))
-    query = layers.concatenate([query, h])
-    c_vector, _ = BahdanauAttention(256)(query, values)
-
-    t_status = layers.Dense(512, kernel_initializer='he_uniform')(c_vector)
+    decoder_lstm = CuDNNLSTM(128)(decoder_output)
+    c_vector, _ = BahdanauAttention(256)(h, values)
+    # 这里我是多对一，同一序列只解码一次，所以直接用encoder的输出隐藏状态
+    # 由于只输出一次，解码也不再用rnn，而是直接全连接
+    t_status = layers.concatenate([c_vector, decoder_lstm])
+    t_status = layers.Dense(512, kernel_initializer='he_uniform')(t_status)
     t_status = BatchNormalization()(t_status)
     t_status = layers.LeakyReLU(0.05)(t_status)
     t_status = layers.Dense(256, kernel_initializer='he_uniform')(t_status)
     output = layers.LeakyReLU(0.05)(t_status)
-    shared_model = Model(self_input, output)
+    shared_model = Model(model_input, output)
     return shared_model
 
 
@@ -129,7 +128,7 @@ def feed_forward_network_layer_normalization(x):
 
 def build_multi_attention_model(self):
     self.network_type = 'multi_attention_model'
-    self_input, encoder_input, query_input = general_input(self)
+    model_input, encoder_input, decoder_output = general_input(self)
 
     # 目前来看在rnn前或中间加dense层效果很差
 
@@ -150,7 +149,7 @@ def build_multi_attention_model(self):
         t = layers.Flatten()(Attention()(t))
         layers_output.append(t)
 
-    for layer in query_input:
+    for layer in decoder_output:
         # pos_code = PositionalEncoding(self.input_steps, 64)(layer)
 
         t = multi_attention_layer_normalizaiton(layer)
@@ -167,7 +166,7 @@ def build_multi_attention_model(self):
     t_status = layers.Dense(512, kernel_initializer='he_uniform')(t_status)
     output = layers.LeakyReLU(0.05)(t_status)
 
-    shared_model = Model(self_input, output)
+    shared_model = Model(model_input, output)
     # 这里模型不能编译，不然后面无法扩充
     return shared_model
 

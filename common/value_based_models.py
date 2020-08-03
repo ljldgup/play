@@ -122,7 +122,7 @@ class DoubleDQN(CommonAgent):
         '''
         return [train_reward, td_error, [pre_actions, action]]
 
-    def train_model(self, folder, round_nums=[], batch_size=16, epochs=30):
+    def train_model(self, folder, round_nums=[], batch_size=32, epochs=30):
         self.train_model_with_sum_tree(folder, round_nums, batch_size, epochs)
 
     # soft型,指数平滑拷贝
