@@ -6,10 +6,10 @@ import pandas as pd
 
 from common.agent import train_model_1by1
 from common.distributional_dqn_model import DistributionalDQN
-from common.policy_based_model import PPO
+from common.policy_based_model import PPO, Critic
 from common.value_based_models import DuelingDQN
-from kof.kof_command_mame import get_action_num
-from kof.kof_network import build_rnn_attention_model, build_stacked_rnn_model
+from kof.kof_command_mame import get_action_num, common_commands
+from kof.kof_network import build_rnn_attention_model, build_stacked_rnn_model, build_multi_attention_model
 
 data_dir = os.getcwd()
 env_colomns = ['role1_action', 'role2_action',
@@ -81,7 +81,7 @@ def raw_env_generate(self, folder, round_nums):
         for idx in end_index:
             # 这里暂时不明白为什么是loc,我是按索引取得，按理应该是iloc
             if raw_env.loc[idx, 'role1_life'] > raw_env.loc[idx, 'role2_life']:
-                raw_env.loc[idx, 'reward'] = 3
+                raw_env.loc[idx, 'reward'] = 2
             elif raw_env.loc[idx, 'role1_life'] < raw_env.loc[idx, 'role2_life']:
                 raw_env.loc[idx, 'reward'] = -2
 
@@ -102,8 +102,7 @@ def train_env_generate(self, raw_env):
         # 这里是loc取的数量是闭区间和python list不一样
         # guard_value不用，放在这里先补齐
         env = raw_env[input_colomns].loc[index - self.input_steps + 1:index]
-
-        # 去掉结尾
+        # 这里len(env)==self.input_steps 保证了index - self.input_steps + 1>0
         if len(env) != self.input_steps or \
                 raw_env['time'].loc[index - self.input_steps + 1] < raw_env['time'].loc[index]:
             pass
@@ -129,46 +128,56 @@ def train_env_generate(self, raw_env):
 def raw_env_data_to_input(self, raw_data, action):
     # 将能量，爆气，上次执行的动作都只输入最后一次，作为decode的query
     return (raw_data[:, :, 0], raw_data[:, :, 1], raw_data[:, :, 2], raw_data[:, :, 3],
-            raw_data[:, :, 4:6], raw_data[:, :, 6:8], raw_data[:, :, 8], raw_data[:, :, 9],
+            raw_data[:, :, 4:8], raw_data[:, :, 8], raw_data[:, :, 9],
 
             # 注意action是上一步的，这里设置一个超长的步长，来保证只选取上一次的动作
-            action[:, self.action_begin_index:self.operation_interval:])
+            action[:, self.action_begin_index::self.operation_interval])
+    # 如果使用common command采用这个
+    # action[:, :])
 
 
 # 这里返回的list要和raw_env_data_to_input返回的大小一样
 def empty_env(self):
-    return [[], [], [], [], [], [], [], [], []]
+    return [[], [], [], [], [], [], [], []]
 
 
 if __name__ == '__main__':
     functions = [
+        # build_multi_attention_model,
         build_rnn_attention_model,
         # build_stacked_rnn_model,
         raw_env_generate, train_env_generate,
         raw_env_data_to_input, empty_env]
-    model1 = PPO('iori', get_action_num('iori'), functions)
+    model1 = PPO('iori', len(common_commands), functions)
     # model1 = DuelingDQN('iori', get_action_num('iori'), functions)
+    # critic 使用transformer时没有办法太好的收敛。。可能原因是中间传输通道的信息太窄。。
+    # model1 = Critic('iori', get_action_num('iori'), functions)
     # model1 = DistributionalDQN('iori', get_action_num('iori'), functions)
     # model1.model_test(4, [1])
     # t = model1.operation_analysis(3)
-    # train_model_1by1(model1, [2], range(1, 4))
+    train_model_1by1(model1, [1], range(1, 2))
     # model1.save_model()
     # t = model.operation_analysis(1)
 
-    raw_env = model1.raw_env_generate(2, [3])
+    '''
+    raw_env = model1.raw_env_generate(1, [1])
     train_env, train_index = model1.train_env_generate(raw_env)
     train_reward, td_error, n_action = model1.train_reward_generate(raw_env, train_env, train_index)
+
     # 这里100 对应的是 raw_env 中 100+input_steps左右位置
+
     t = model1.predict_model.predict([np.expand_dims(env[100], 0) for env in train_env])
-    # t = model.predict_model.predict([env for env in train_env])
+
+    # t = model1.predict_model([env for env in train_env])
     # output = model.output_test([ev[50].reshape(1, *ev[50].shape) for ev in train_env])
     # train_reward[range(len(n_action[1])), n_action[1]]
     # model1.model_test(1, [1])
     # t = model1.operation_analysis(5)
     # 查看训练数据是否对的上
-
-    index = 65
+    for i in zip(td_error, raw_env.reward.values):
+        if i[1] != 0:
+            print(i)
+    index = 34
     train_index[index], raw_env['action'].reindex(train_index).values[index], raw_env['reward'].reindex(
         train_index).values[index], [np.expand_dims(env[index], 0) for env in train_env]
-    '''
     '''

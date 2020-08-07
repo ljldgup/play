@@ -2,9 +2,11 @@ import tensorflow as tf
 import numpy as np
 from matplotlib import pyplot as plt
 
+
 def get_angles(pos, i, d_model):
-  angle_rates = 1 / np.power(10000, (2 * (i//2)) / np.float32(d_model))
-  return pos * angle_rates
+    angle_rates = 1 / np.power(10000, (2 * (i // 2)) / np.float32(d_model))
+    return pos * angle_rates
+
 
 def positional_encoding(position, d_model):
     angle_rads = get_angles(np.arange(position)[:, np.newaxis],
@@ -117,7 +119,6 @@ class MultiHeadAttention(tf.keras.layers.Layer):
         return output, attention_weights
 
 
-
 class EncoderLayer(tf.keras.layers.Layer):
     def __init__(self, d_model, num_heads, dff, rate=0.1):
         super(EncoderLayer, self).__init__()
@@ -181,14 +182,14 @@ class DecoderLayer(tf.keras.layers.Layer):
 
 
 class Encoder(tf.keras.layers.Layer):
-    def __init__(self, num_layers, d_model, num_heads, dff, input_vocab_size,
+    def __init__(self, num_layers, d_model, num_heads, dff,
                  maximum_position_encoding, rate=0.1):
         super(Encoder, self).__init__()
 
         self.d_model = d_model
         self.num_layers = num_layers
 
-        self.embedding = tf.keras.layers.Embedding(input_vocab_size, d_model)
+        # self.embedding = tf.keras.layers.Embedding(input_vocab_size, d_model)
         self.pos_encoding = positional_encoding(maximum_position_encoding,
                                                 self.d_model)
 
@@ -201,7 +202,9 @@ class Encoder(tf.keras.layers.Layer):
         seq_len = tf.shape(x)[1]
 
         # 将嵌入和位置编码相加。
-        x = self.embedding(x)  # (batch_size, input_seq_len, d_model)
+        # 这里因为我输入的是已经拼接好的所以不用再嵌入
+        # 注意这样改了之后，按照这里的方式训练输入的embedding参数不会被训练到，但我用keras模型不会受到影响
+        # x = self.embedding(x)  # (batch_size, input_seq_len, d_model)
         x *= tf.math.sqrt(tf.cast(self.d_model, tf.float32))
         x += self.pos_encoding[:, :seq_len, :]
 
@@ -233,7 +236,7 @@ class Decoder(tf.keras.layers.Layer):
         seq_len = tf.shape(x)[1]
         attention_weights = {}
 
-        x = self.embedding(x)  # (batch_size, target_seq_len, d_model)
+        # x = self.embedding(x)  # (batch_size, target_seq_len, d_model)
         x *= tf.math.sqrt(tf.cast(self.d_model, tf.float32))
         x += self.pos_encoding[:, :seq_len, :]
 
@@ -250,15 +253,17 @@ class Decoder(tf.keras.layers.Layer):
         return x, attention_weights
 
 
+# 原来模型都使用同样的嵌入尺寸，我这里输入输出不一样，所以改成不同的尺寸
+# 因为输入的已经是embedding过的，所以删输入除词汇量
 class Transformer(tf.keras.Model):
-    def __init__(self, num_layers, d_model, num_heads, dff, input_vocab_size,
+    def __init__(self, num_layers, input_d_model, target_d_model, num_heads, dff,
                  target_vocab_size, pe_input, pe_target, rate=0.1):
         super(Transformer, self).__init__()
 
-        self.encoder = Encoder(num_layers, d_model, num_heads, dff,
-                               input_vocab_size, pe_input, rate)
+        self.encoder = Encoder(num_layers, input_d_model, num_heads, dff,
+                               pe_input, rate)
 
-        self.decoder = Decoder(num_layers, d_model, num_heads, dff,
+        self.decoder = Decoder(num_layers, target_d_model, num_heads, dff,
                                target_vocab_size, pe_target, rate)
 
         self.final_layer = tf.keras.layers.Dense(target_vocab_size)
@@ -275,20 +280,30 @@ class Transformer(tf.keras.Model):
 
         return final_output, attention_weights
 
+
 def point_wise_feed_forward_network(d_model, dff):
-  return tf.keras.Sequential([
-      tf.keras.layers.Dense(dff, activation='relu'),  # (batch_size, seq_len, dff)
-      tf.keras.layers.Dense(d_model)  # (batch_size, seq_len, d_model)
-  ])
+    return tf.keras.Sequential([
+        tf.keras.layers.Dense(dff, activation='relu'),  # (batch_size, seq_len, dff)
+        tf.keras.layers.Dense(d_model)  # (batch_size, seq_len, d_model)
+    ])
 
 
 def create_look_ahead_mask(size):
-  mask = 1 - tf.linalg.band_part(tf.ones((size, size)), -1, 0)
-  return mask  # (seq_len, seq_len)
+    mask = 1 - tf.linalg.band_part(tf.ones((size, size)), -1, 0)
+    return mask  # (seq_len, seq_len)
 
+
+def print_out(q, k, v):
+    temp_out, temp_attn = scaled_dot_product_attention(
+        q, k, v, None)
+    print('Attention weights are:')
+    print(temp_attn)
+    print('Output is:')
+    print(temp_out)
 
 
 if __name__ == '__main__':
+    '''
     pos_encoding = positional_encoding(50, 512)
     print(pos_encoding.shape)
 
@@ -298,3 +313,90 @@ if __name__ == '__main__':
     plt.ylabel('Position')
     plt.colorbar()
     plt.show()
+
+    x = tf.random.uniform((1, 3))
+    temp = create_look_ahead_mask(x.shape[1])
+
+    np.set_printoptions(suppress=True)
+
+    temp_k = tf.constant([[10, 0, 0],
+                          [0, 10, 0],
+                          [0, 0, 10],
+                          [0, 0, 10]], dtype=tf.float32)  # (4, 3)
+
+    temp_v = tf.constant([[1, 0],
+                          [10, 0],
+                          [100, 5],
+                          [1000, 6]], dtype=tf.float32)  # (4, 2)
+
+    # 这条 `请求（query）符合第二个`主键（key）`，
+    # 因此返回了第二个`数值（value）`。
+    temp_q = tf.constant([[0, 10, 0]], dtype=tf.float32)  # (1, 3)
+    print_out(temp_q, temp_k, temp_v)
+
+    temp_q = tf.constant([[0, 0, 10]], dtype=tf.float32)  # (1, 3)
+    print_out(temp_q, temp_k, temp_v)
+
+    temp_mha = MultiHeadAttention(d_model=512, num_heads=8)
+    y = tf.random.uniform((1, 60, 512))  # (batch_size, encoder_sequence, d_model)
+    out, attn = temp_mha(y, k=y, q=y, mask=None)
+    out.shape, attn.shape
+
+    sample_ffn = point_wise_feed_forward_network(512, 2048)
+    sample_ffn(tf.random.uniform((64, 50, 512))).shape
+
+    sample_encoder_layer = EncoderLayer(512, 8, 2048)
+
+    sample_encoder_layer_output = sample_encoder_layer(
+        tf.random.uniform((64, 43, 512)), False, None)
+
+    sample_encoder_layer_output.shape  # (batch_size, input_seq_len, d_model)
+
+    sample_decoder_layer = DecoderLayer(512, 8, 2048)
+
+    sample_decoder_layer_output, _, _ = sample_decoder_layer(
+        tf.random.uniform((64, 50, 512)), sample_encoder_layer_output,
+        False, None, None)
+
+    sample_decoder_layer_output.shape  # (batch_size, target_seq_len, d_model)
+
+    sample_transformer = Transformer(
+        num_layers=2, d_model=512, num_heads=8, dff=2048,
+        input_vocab_size=None, target_vocab_size=8000,
+        pe_input=10000, pe_target=6000)
+
+    # 该处直接输入拼接过的embedding
+    temp_input = tf.random.uniform((1, 62, 512))
+    # temp_input = tf.random.uniform((64, 62))
+    temp_target = tf.random.uniform((1, 1))
+
+    fn_out, _ = sample_transformer(temp_input, temp_target, training=False,
+                                   enc_padding_mask=None,
+                                   look_ahead_mask=None,
+                                   dec_padding_mask=None)
+
+    fn_out.shape  # (batch_size, tar_seq_len, target_vocab_size)
+    '''
+    temp_input_embedding = tf.random.uniform((64, 8, 64))
+    temp_target_embedding = tf.random.uniform((64, 2, 32))
+
+    sample_transformer = Transformer(
+        num_layers=2, input_d_model=64, target_d_model=32,
+        num_heads=4, dff=256,
+        target_vocab_size=32,
+        pe_input=8, pe_target=2)
+
+    input_embedded = tf.keras.layers.Input((16, 64))
+    # 这里时间步数如果是1的话，输出形状变成[None, None, 32],会出错
+    target_embedded = tf.keras.layers.Input((2, 32))
+
+    out, _ = sample_transformer(input_embedded, target_embedded, training=False,
+                                enc_padding_mask=None,
+                                look_ahead_mask=None,
+                                dec_padding_mask=None)
+    # 注意单个 输出，输出的时候不要用list
+    model = tf.keras.Model([input_embedded, target_embedded], out)
+    # model.compile(optimizer='adam', loss='sparse_categorical_crossentropy')
+    # 直接计算
+    t = model([temp_input_embedding, temp_target_embedding])
+    # t = model.predict([temp_input_embedding, temp_target])

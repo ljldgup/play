@@ -10,8 +10,9 @@ from common.distributional_dqn_model import DistributionalDQN
 from common.policy_based_model import PPO
 from common.value_based_models import DuelingDQN
 from kof.kof_agent import raw_env_generate, train_env_generate, empty_env, raw_env_data_to_input
-from kof.kof_command_mame import operation, restart, global_set, get_action_num
-from kof.kof_network import build_rnn_attention_model, build_stacked_rnn_model
+from kof.kof_command_mame import operation, restart, global_set, get_action_num, common_operation, common_commands, \
+    pause
+from kof.kof_network import build_rnn_attention_model, build_stacked_rnn_model, build_multi_attention_model
 
 '''
 mame.ini keyboardprovider设置成win32不然无法接受键盘输入
@@ -60,14 +61,10 @@ def train_on_mame(model, train=True, round_num=12):
     # 临时存放数据
     tmp_action = []
     tmp_env = []
-
-    # 运行mame
+    # 运行mame,直接使用cwd参数切换目录会导致mame卡住一会，原因不明
     os.chdir(mame_dir)
-    # 直接使用cwd参数切换目录会导致mame卡住一会，原因不明
     s = subprocess.Popen(mame_dir + '/mame.exe', bufsize=0, stdout=subprocess.PIPE, universal_newlines=True)
-
     count = 0
-
     try:
         while count <= round_num:
             line = s.stdout.readline()
@@ -82,6 +79,8 @@ def train_on_mame(model, train=True, round_num=12):
                     # 后续发现是重启过程中mame输出过多导致程序卡死，已经在lua脚本中进行修正，只输出一次
                     # 训练,第一次数据不对，是第一投币之前的数据
                     if count > 0:
+                        # 暂停游戏，游戏在运行一定时间后，内存容易出现不可控情况，导致卡顿
+                        pause()
                         # 保存环境，动作
                         if len(tmp_action) > 10:
                             record_file = '{}.'.format(int(count))
@@ -100,8 +99,8 @@ def train_on_mame(model, train=True, round_num=12):
                             # 观察每次训练后的情况，如果变化过大的话，说明学习率太大
                             print('训练后动作变化情况')
                             dqn_model.model_test(folder_num, [count])
-                            print("重开")
-
+                            pause()  # 开始游戏
+                    print("重开")
                     tmp_action = []
                     tmp_env = []
                     count += 1
@@ -109,14 +108,14 @@ def train_on_mame(model, train=True, round_num=12):
                     if train:
                         # 每过1/5步子减少1
                         # multi_steps = 2 // (5 * count // round_num + 1) + 1
-                        multi_steps = 2
+                        multi_steps = 4
                         if model.model_type.startswith('PPO'):
                             model.critic.multi_steps = multi_steps
                         else:
                             model.multi_steps = multi_steps
                         # 随机生成e_greedy
                         # model.e_greedy = 99.7% [-3*sigma,3*sigma] 95.4% [-2*sigma,2*sigma], 68.3% [-sigma,sigma]
-                        model.e_greedy = 0.94 + 0.04 * np.random.randn()
+                        model.e_greedy = 0.94 + 0.03 * np.random.randn()
                         # model.e_greedy = 0.5 + 0.6 * count // round_num
 
                     else:
@@ -125,7 +124,7 @@ def train_on_mame(model, train=True, round_num=12):
                     print('greedy:', model.e_greedy)
 
                     # 重启，role用来选人
-                    restart(model.role)
+                    restart()
 
                 else:
                     tmp_env.append(data)
@@ -134,17 +133,20 @@ def train_on_mame(model, train=True, round_num=12):
                     if len(tmp_env) % model.operation_interval == 0:
 
                         # 注意tmp_action比 tmp_env长度少1， 所以这里用tmp_action判断
-                        if len(tmp_env) < model.input_steps:
+                        if len(tmp_action) < model.input_steps:
                             # 开局蹲防
-                            keys = 1
+                            keys = model.choose_action(None, None, random_choose=True)
                         else:
                             keys = model.choose_action(np.array([tmp_env[-model.input_steps:]]),
-                                                       np.array([tmp_action[-model.input_steps:]]),
+                                                       np.array([tmp_action[-model.input_steps + 1:]]),
                                                        random_choose=False)
-                        # print(keys)
-                        # 按键采用一个新的线程执行，其他部分在主线程中进行，避免顺序混乱
-                        # 1p 在右边
-                        if data[4] > data[6]:
+
+                        # common_commands通用按键，无需分左右，交给网络自己判断
+                        # executor.submit(common_operation, common_commands[keys])
+                        # print(keys, ':', line)
+
+                        # 按键采用一个新的线程执行，
+                        if data[4] > data[6]:  # 1p 在右边
                             # t = executor.submit(operation, keys, True)
                             executor.submit(operation, keys, True)
                             # operation(keys, True)
@@ -152,20 +154,18 @@ def train_on_mame(model, train=True, round_num=12):
                             # t = executor.submit(operation, keys)
                             executor.submit(operation, keys)
                             # operation(keys)
-                        # 提交异常，这里影响效率，暂时去掉
+                        # 没动做很可能是线程异常，这里不会报，需要提交异常，这里影响效率，有必要再用
                         # executor.submit(raise_expection, t)
                     else:
                         # 如果不在操作的步长上，直接返回-1，不采取任何操作
                         # -1代表没有任何操作，而0,5等都是回中或者防御，回对当前状态造成影响
                         keys = -1
-
                     tmp_action.append(keys)
-
     except:
         traceback.print_exc()
     finally:
         print(line)
-        s.kill()
+        s.terminate()
         model.save_model()
         executor.shutdown()
     return folder_num, count - 1
@@ -177,13 +177,13 @@ if __name__ == '__main__':
     global_set(role)
     # dqn_model = DoubleDQN('iori')
     functions = [  # build_stacked_rnn_model,
-        build_rnn_attention_model,
+        # build_rnn_attention_model,
+        build_multi_attention_model,
         raw_env_generate, train_env_generate,
         raw_env_data_to_input, empty_env]
-    dqn_model = PPO('iori', get_action_num('iori'), functions)
+    dqn_model = PPO('ioriVSkyo', get_action_num('iori'), functions)
     # dqn_model = DuelingDQN('iori', get_action_num('iori'), functions)
     # dqn_model = DistributionalDQN('iori', get_action_num('iori'), functions)
-
     # QuantileRegressionDQN有bug，会过估计，暂时不明白错误在哪里
     # dqn_model = QuantileRegressionDQN()
     # dqn_model = RandomAgent('iori')

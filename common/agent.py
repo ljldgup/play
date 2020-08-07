@@ -51,7 +51,7 @@ def train_model_1by1(model, folders, rounds):
             try:
                 print('train {}/{}'.format(i, r))
                 # model.train_model(i)
-                model.train_model(i, [r], epochs=55)
+                model.train_model(i, [r], epochs=30)
                 # 这种直接拷贝的效果和nature DQN其实没有区别。。所以放到外层去拷贝，训练时应该加大拷贝的间隔
                 # 改成soft copy
                 # model.soft_weight_copy()
@@ -79,9 +79,9 @@ class CommonAgent:
         self.train_env_generate = types.MethodType(functions[2], self)
         self.raw_env_data_to_input = types.MethodType(functions[3], self)
         self.empty_env = types.MethodType(functions[4], self)
-        self.reward_decay = 0.99
+        self.reward_decay = 0.96
         # 输入步数
-        self.input_steps = 6
+        self.input_steps = 8
 
         # 训练时会重置
         self.e_greedy = 0
@@ -90,10 +90,11 @@ class CommonAgent:
         self.operation_interval = 3
         # 由于action有间隔，输入序列第一个action所在的位置，方便提取action
         self.action_begin_index = (self.input_steps - 1) % self.operation_interval
+        # 小于1在transformer中会出错
         self.action_steps = (self.input_steps - 1) // self.operation_interval
 
         # multi_steps 配合decay使网络趋向真实数据，但multi_steps加大会导致r波动大
-        self.multi_steps = 1
+        self.multi_steps = 3
 
         # 模型参数拷贝间隔
         self.copy_interval = 3

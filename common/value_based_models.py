@@ -137,6 +137,7 @@ class DoubleDQN(CommonAgent):
         self.target_model.set_weights(target_weights)
 
     def weight_copy(self):
+        # 这里报模型错误基本上是保存的模型和现有结构不同
         self.target_model.set_weights(self.predict_model.get_weights())
 
     def save_model(self, ):

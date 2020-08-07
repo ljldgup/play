@@ -57,7 +57,9 @@ class ActorCritic(DoubleDQN):
 
     def __init__(self, role, action_num, functions, model_type='AC_actor'):
         self.critic = Critic(role, action_num=action_num, functions=functions,
-                             model_type=model_type + "_critic")
+                                model_type=model_type + "_critic")
+        # self.critic = Critic(role, action_num=action_num, functions=functions,
+        #                      model_type=model_type + "_critic")
         super().__init__(role=role, action_num=action_num, functions=functions,
                          model_type=model_type)
         self.train_reward_generate = self.actor_tarin_data
@@ -88,7 +90,7 @@ class ActorCritic(DoubleDQN):
         # 使用mean(td_error * (log(action_prob)))，作为损失用于训练
 
         # 使用一定的噪声初始化，尽可能避免概率收敛到过激值
-        action_onehot = np.random.rand(len(action[1]), self.action_num) / 100
+        action_onehot = np.zeros((len(action[1]), self.action_num))
 
         # 这里即可使用价值，也可以同td_error
         action_onehot[range(len(action[1])), action[1]] = td_error
@@ -126,10 +128,10 @@ class PPO(ActorCritic):
         ActorCritic.__init__(self, role=role, action_num=action_num, functions=functions,
                              model_type=model_type)
         # PPO的训练模型需要学西率稍大
-        self.lr = 2e-7
+        self.lr = 5e-7
         # 用于训练的模型, 加额外的ppo损失
         self.trained_model = self.build_train_model()
-        self.trained_model.set_weights(self.predict_model.get_weights())
+        # self.trained_model.set_weights(self.predict_model.get_weights())
 
     def build_model(self):
         # shared_model = build_stacked_rnn_model(self)
@@ -168,8 +170,8 @@ class PPO(ActorCritic):
         # 这里要用zero将无关动作置0，避免计入损失
         reward_onehot = np.zeros_like(old_prob)
         # 这里用adv或者te_error都可以
-        reward_onehot[range(len(action[1])), action[1]] = adv[:, 0]
-        # reward_onehot[range(len(action[1])), action[1]] = td_error
+        # reward_onehot[range(len(action[1])), action[1]] = adv[:, 0]
+        reward_onehot[range(len(action[1])), action[1]] = td_error
         return [[reward_onehot, old_prob], td_error, [old_action, action[1]]]
 
     def train_model(self, folder, round_nums=[], batch_size=32, epochs=30):
