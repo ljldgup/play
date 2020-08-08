@@ -144,7 +144,7 @@ def build_multi_attention_model(self):
     x += pos_encoding[:, :self.action_steps, :]
     x = tf.keras.layers.Dropout(0.1)(x)
     # 这里因为action输入步数少而且窄，所以采用4层
-    for i in range(2):
+    for i in range(4):
         att1, _ = MultiHeadAttention(dec_d_model, 2)(x, x, x, None)
         att1 = tf.keras.layers.Dropout(0.1)(att1)
         x = tf.keras.layers.LayerNormalization(epsilon=1e-6)(x + att1)
