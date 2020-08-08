@@ -68,8 +68,7 @@ class ActorCritic(DoubleDQN):
 
     # 要比较即时和数据预测结果是否一致的时候用argmax的版本
     def choose_action(self, raw_data, action, random_choose=False):
-        # PPO egreedy就不用了
-        if random_choose:
+        if random_choose or random.random() > self.e_greedy:
             return random.randint(0, self.action_num - 1)
         else:
             # 使用np.random.choice返回采样结果

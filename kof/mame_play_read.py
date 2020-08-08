@@ -88,8 +88,8 @@ def train_on_mame(model, train=True, round_num=12):
                             np.savetxt(data_dir + '/' + record_file + 'env', np.array(tmp_env))
                             # 查看刚刚动作对不对，因为e-greedy会有少数随机，如果很大比例是false说明训练数据和实时数据不一样
                             # PPO查看时要把按概率采样的函数注释掉，用原来的argmax版本
-                            # print('实时动作与训练数据输出动作比较')
-                            # model.model_test(folder_num, [count])
+                            print('实时动作与训练数据输出动作比较')
+                            model.model_test(folder_num, [count])
                             if train:
                                 print(str(time.asctime(time.localtime(time.time()))))
                                 model.train_model(folder_num, [count], epochs=epochs)
@@ -115,7 +115,7 @@ def train_on_mame(model, train=True, round_num=12):
                             model.multi_steps = multi_steps
                         # 随机生成e_greedy
                         # model.e_greedy = 99.7% [-3*sigma,3*sigma] 95.4% [-2*sigma,2*sigma], 68.3% [-sigma,sigma]
-                        model.e_greedy = 0.94 + 0.03 * np.random.randn()
+                        model.e_greedy = 0.91 + 0.03 * np.random.randn()
                         # model.e_greedy = 0.5 + 0.6 * count // round_num
 
                     else:
