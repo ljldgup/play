@@ -79,29 +79,29 @@ class CommonAgent:
         self.train_env_generate = types.MethodType(functions[2], self)
         self.raw_env_data_to_input = types.MethodType(functions[3], self)
         self.empty_env = types.MethodType(functions[4], self)
-        self.reward_decay = 0.96
+        self.reward_decay = 0.999
         # 输入步数
-        self.input_steps = 8
+        self.input_steps = 6
 
         # 训练时会重置
         self.e_greedy = 0
 
         # 操作间隔时间步数
-        self.operation_interval = 3
+        self.operation_interval = 2
         # 由于action有间隔，输入序列第一个action所在的位置，方便提取action
         self.action_begin_index = (self.input_steps - 1) % self.operation_interval
         # 小于1在transformer中会出错
         self.action_steps = (self.input_steps - 1) // self.operation_interval
 
         # multi_steps 配合decay使网络趋向真实数据，但multi_steps加大会导致r波动大
-        self.multi_steps = 3
+        self.multi_steps = 1
 
         # 模型参数拷贝间隔
-        self.copy_interval = 3
+        self.copy_interval = 5
         # reward 缩减比例
-        self.reward_scale_factor = 30
+        self.reward_scale_factor = 20
         # 学习率
-        self.lr = 1e-7
+        self.lr = 2e-6
         # build_model由子类提供
         self.predict_model = self.build_model()
         self.target_model = self.build_model()

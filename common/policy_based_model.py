@@ -1,4 +1,5 @@
 import os
+import random
 
 import numpy as np
 
@@ -57,7 +58,7 @@ class ActorCritic(DoubleDQN):
 
     def __init__(self, role, action_num, functions, model_type='AC_actor'):
         self.critic = Critic(role, action_num=action_num, functions=functions,
-                                model_type=model_type + "_critic")
+                             model_type=model_type + "_critic")
         # self.critic = Critic(role, action_num=action_num, functions=functions,
         #                      model_type=model_type + "_critic")
         super().__init__(role=role, action_num=action_num, functions=functions,
@@ -65,15 +66,15 @@ class ActorCritic(DoubleDQN):
         self.train_reward_generate = self.actor_tarin_data
         self.actor = self.predict_model
 
-    '''
-    def choose_action(self, raw_data, random_choose=False):
-        if random_choose or random.random() > self.e_greedy:
+    # 要比较即时和数据预测结果是否一致的时候用argmax的版本
+    def choose_action(self, raw_data, action, random_choose=False):
+        # PPO egreedy就不用了
+        if random_choose:
             return random.randint(0, self.action_num - 1)
         else:
             # 使用np.random.choice返回采样结果
-            prob = self.predict_model.predict(self.raw_env_data_to_input(raw_data))
+            prob = self.predict_model.predict(self.raw_env_data_to_input(raw_data, action))
             return np.random.choice(self.action_num, p=prob[0])
-    '''
 
     def build_model(self):
         # shared_model = self.build_shared_model()
@@ -128,7 +129,7 @@ class PPO(ActorCritic):
         ActorCritic.__init__(self, role=role, action_num=action_num, functions=functions,
                              model_type=model_type)
         # PPO的训练模型需要学西率稍大
-        self.lr = 5e-7
+        self.lr = 5e-6
         # 用于训练的模型, 加额外的ppo损失
         self.trained_model = self.build_train_model()
         # self.trained_model.set_weights(self.predict_model.get_weights())

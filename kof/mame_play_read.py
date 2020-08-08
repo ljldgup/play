@@ -77,7 +77,7 @@ def train_on_mame(model, train=True, round_num=12):
 
                     # 这里训练过长的时间，mame会卡死，目前不知道什么原因
                     # 后续发现是重启过程中mame输出过多导致程序卡死，已经在lua脚本中进行修正，只输出一次
-                    # 训练,第一次数据不对，是第一投币之前的数据
+                    # 发现重启前时间过长，某些模拟打斗，动画也会造成卡顿
                     if count > 0:
                         # 暂停游戏，游戏在运行一定时间后，内存容易出现不可控情况，导致卡顿
                         pause()
@@ -86,10 +86,10 @@ def train_on_mame(model, train=True, round_num=12):
                             record_file = '{}.'.format(int(count))
                             np.savetxt(data_dir + '/' + record_file + 'act', np.array(tmp_action))
                             np.savetxt(data_dir + '/' + record_file + 'env', np.array(tmp_env))
-                            # 查看刚刚动作对不对，因为e-greedy会有少数随机，
-                            # 如果很大比例是false说明训练数据和实时数据不一样
-                            print('实时动作与训练数据输出动作比较')
-                            model.model_test(folder_num, [count])
+                            # 查看刚刚动作对不对，因为e-greedy会有少数随机，如果很大比例是false说明训练数据和实时数据不一样
+                            # PPO查看时要把按概率采样的函数注释掉，用原来的argmax版本
+                            # print('实时动作与训练数据输出动作比较')
+                            # model.model_test(folder_num, [count])
                             if train:
                                 print(str(time.asctime(time.localtime(time.time()))))
                                 model.train_model(folder_num, [count], epochs=epochs)

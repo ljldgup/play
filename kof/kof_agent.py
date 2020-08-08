@@ -74,6 +74,7 @@ def raw_env_generate(self, folder, round_nums):
         # raw_env['reward'] = raw_env['reward'].shift(-1).fillna(0)
         # 这个地方应该是错误的，因为diff就是当前和之后的差，就是当前action的reward，所以应该不需要再移动
 
+        '''
         # 根据胜负增加额外的报酬,pandas不允许切片或者搜索赋值，只能先这样
         t = raw_env[raw_env['action'] > 0]
         end_index = (t[t['time'].diff(1).shift(-1).fillna(1) > 0]).index
@@ -84,7 +85,7 @@ def raw_env_generate(self, folder, round_nums):
                 raw_env.loc[idx, 'reward'] = 2
             elif raw_env.loc[idx, 'role1_life'] < raw_env.loc[idx, 'role2_life']:
                 raw_env.loc[idx, 'reward'] = -2
-
+        '''
         # r值裁剪,剪裁应该放到训练数据生成的地方
         # raw_env['reward'][raw_env['reward'] > 2] = 2
         # raw_env['reward'][raw_env['reward'] < -2] = -2
@@ -155,7 +156,7 @@ if __name__ == '__main__':
     # model1 = DistributionalDQN('iori', get_action_num('iori'), functions)
     # model1.model_test(4, [1])
     # t = model1.operation_analysis(3)
-    train_model_1by1(model1, [1], range(1, 2))
+    #train_model_1by1(model1, [1], range(1, 2))
     # model1.save_model()
     # t = model.operation_analysis(1)
 

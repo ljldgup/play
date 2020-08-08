@@ -51,26 +51,23 @@ role_commands['iori'] = [
     # 蹲防
     ([4, 2], [0, 0]),
     # 跳跃
-    ([8, 5], [0, 0]),
-    # 如果发现人物经常性不动检查是否大量输出这个动作，其次看看线程有有无异常，线程不会主动抛出错误
+    ([8, 5], [0, 4]),
     ([6], [0]),
-    # ab,cd,爆气
+    # ab,cd
     ([5], [5]),
     ([5], [6]),
-    # ([5], [7]),
+    # 如果发现人物经常性不动检查是否大量输出这个动作，其次看看线程有有无异常，线程不会主动抛出错误
     ([5], [0]),
     ([5], [2]),
     ([5], [3]),
-    ([5], [4]),
+    ([6], [4]),
     ([6, 6], [0, 1]),
     ([2], [1]),
-    ([2], [2]),
     ([2], [4]),
     ([2, 1, 4], [0, 0, 1]),
     ([2, 1, 4], [0, 0, 3]),
     ([2, 3, 6], [0, 0, 3]),
-    ([6, 2, 1, 4], [0, 0, 0, 2]),
-    ([6, 2, 3], [0, 0, 2]),
+    ([6, 2, 1, 4], [0, 0, 0, 4]),
     ([6, 2, 3], [0, 0, 1]),
     ([2, 3, 6, 2, 1, 4], [0, 0, 0, 0, 0, 3]),
 ]
@@ -139,7 +136,7 @@ def action_operation(action_key):
     if action_key:
         time.sleep(0.035)
     else:
-        time.sleep(0.025)
+        time.sleep(0.015)
 
     for key in action_key_list[action_key]:
         win32api.keybd_event(keys_map[key], virtual_key_map[key], win32con.KEYEVENTF_KEYUP, 0)
@@ -206,7 +203,7 @@ def restart():
 
 def operation_test(role):
     global role_commands
-    time.sleep(5)
+    time.sleep(2)
     for keys in role_commands[role]:
         print(keys)
         for d, a in zip(keys[0], keys[1]):
@@ -271,5 +268,4 @@ if __name__ == '__main__':
     time.sleep(5)
     # global_set('kyo')
     # test()
-    # operation()
-    common_operation_test()
+    operation_test('iori')

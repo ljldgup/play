@@ -13,31 +13,31 @@ def general_input(self):
     role1_actions = Input(shape=(self.input_steps,), name='role1_actions')
     role2_actions = Input(shape=(self.input_steps,), name='role2_actions')
     # 鉴于embedding就是onehot+全连接，这里加大embedding的size
-    role1_actions_embedding = layers.Embedding(512, 128, name='role1_actions_embedding')(role1_actions)
-    role2_actions_embedding = layers.Embedding(512, 128, name='role2_actions_embedding')(role2_actions)
+    role1_actions_embedding = layers.Embedding(512, 64, name='role1_actions_embedding')(role1_actions)
+    role2_actions_embedding = layers.Embedding(512, 64, name='role2_actions_embedding')(role2_actions)
 
     role1_energy = Input(shape=(self.input_steps,), name='role1_energy')
-    role1_energy_embedding = layers.Embedding(5, 14, name='role1_energy_embedding')(role1_energy)
+    role1_energy_embedding = layers.Embedding(5, 4, name='role1_energy_embedding')(role1_energy)
     role2_energy = Input(shape=(self.input_steps,), name='role2_energy')
-    role2_energy_embedding = layers.Embedding(5, 14, name='role2_energy_embedding')(role2_energy)
+    role2_energy_embedding = layers.Embedding(5, 4, name='role2_energy_embedding')(role2_energy)
 
     role1_baoqi = Input(shape=(self.input_steps,), name='role1_baoqi')
-    role1_baoqi_embedding = layers.Embedding(2, 16, name='role1_baoqi_embedding')(role1_baoqi)
+    role1_baoqi_embedding = layers.Embedding(2, 8, name='role1_baoqi_embedding')(role1_baoqi)
     role2_baoqi = Input(shape=(self.input_steps,), name='role2_baoqi')
-    role2_baoqi_embedding = layers.Embedding(2, 16, name='role2_baoqi_embedding')(role2_baoqi)
+    role2_baoqi_embedding = layers.Embedding(2, 8, name='role2_baoqi_embedding')(role2_baoqi)
 
     role_position = Input(shape=(self.input_steps, 4), name='role_x_y')
 
     # 感觉这种环境每次都不同，小批量数据bn可能不太稳定，这里先不用
     # 这里加dense就是对最后一层坐标进行全连接，和timedistribute相同
     # 步长1 距离，步长2速度
-    conv_role_position_1 = layers.Conv1D(filters=96, kernel_size=1, strides=1, padding='same')(role_position)
-    conv_role_position_2 = layers.Conv1D(filters=96, kernel_size=2, strides=1, padding='same')(role_position)
+    conv_role_position_1 = layers.Conv1D(filters=64, kernel_size=1, strides=1, padding='same')(role_position)
+    conv_role_position_2 = layers.Conv1D(filters=64, kernel_size=2, strides=1, padding='same')(role_position)
     # normal_role_distance = BatchNormalization()(role_distance)
 
     # actions_input = Input(shape=(self.input_steps,), name='last_action')
     actions_input = Input(shape=(self.action_steps,), name='last_action')
-    actions_embedding = layers.Embedding(self.action_num, 128, name='last_action_embedding')(actions_input)
+    actions_embedding = layers.Embedding(self.action_num, 64, name='last_action_embedding')(actions_input)
 
     model_input = [role1_actions, role2_actions, role1_energy, role2_energy,
                    role_position, role1_baoqi, role2_baoqi, actions_input]
@@ -119,7 +119,7 @@ def build_multi_attention_model(self):
 
     # 这里使用transformer建立模型读取非常慢，原因不明可能没有保存模型结构，载入需要做大量判断
     # 改成自己手动建立
-    enc_d_model = 512
+    enc_d_model = 284
     pos_encoding = positional_encoding(self.input_steps, enc_d_model)
     # 环境嵌入尺寸324
     x *= tf.math.sqrt(tf.cast(enc_d_model, tf.float32))
@@ -138,7 +138,7 @@ def build_multi_attention_model(self):
     # 之前解码器输出的动作
     x = decoder_output
     # 动作嵌入尺寸
-    dec_d_model = 128
+    dec_d_model = 64
     x *= tf.math.sqrt(tf.cast(dec_d_model, tf.float32))
     pos_encoding = positional_encoding(self.action_steps, dec_d_model)
     x += pos_encoding[:, :self.action_steps, :]
