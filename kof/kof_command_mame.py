@@ -49,21 +49,23 @@ role_commands['iori'] = [
     # 防御
     ([4], [0]),
     # 蹲防
-    ([4, 2], [0, 0]),
+    ([1], [0]),
+    ([4], [2]),
+    ([4], [3]),
+    ([1], [1]),
+    ([1], [3]),
+    ([1], [4]),
     # 跳跃
-    ([8, 5], [0, 4]),
-    ([6], [0]),
+    ([8, 5, 5, 5, 5], [0, 0, 0, 0, 4]),
     # ab,cd
-    ([5], [5]),
-    ([5], [6]),
+    ([4], [5]),
+    ([6], [5]),
+    ([4], [6]),
     # 如果发现人物经常性不动检查是否大量输出这个动作，其次看看线程有有无异常，线程不会主动抛出错误
     ([5], [0]),
-    ([5], [2]),
-    ([5], [3]),
+    ([6], [0]),
     ([6], [4]),
     ([6, 6], [0, 1]),
-    ([2], [1]),
-    ([2], [4]),
     ([2, 1, 4], [0, 0, 1]),
     ([2, 1, 4], [0, 0, 3]),
     ([2, 3, 6], [0, 0, 3]),
@@ -203,14 +205,14 @@ def restart():
 
 def operation_test(role):
     global role_commands
-    time.sleep(2)
+    time.sleep(1)
     for keys in role_commands[role]:
         print(keys)
         for d, a in zip(keys[0], keys[1]):
             print(d, ' ', a)
             direction_operation(d)
             action_operation(a)
-        time.sleep(2)
+        time.sleep(1)
     direction_operation(5)
     action_operation(0)
 
@@ -265,7 +267,7 @@ def common_operation_test():
 
 
 if __name__ == '__main__':
-    time.sleep(5)
+    time.sleep(2)
     # global_set('kyo')
     # test()
     operation_test('iori')

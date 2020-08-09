@@ -13,8 +13,8 @@ def general_input(self):
     role1_actions = Input(shape=(self.input_steps,), name='role1_actions')
     role2_actions = Input(shape=(self.input_steps,), name='role2_actions')
     # 鉴于embedding就是onehot+全连接，这里加大embedding的size
-    role1_actions_embedding = layers.Embedding(512, 64, name='role1_actions_embedding')(role1_actions)
-    role2_actions_embedding = layers.Embedding(512, 64, name='role2_actions_embedding')(role2_actions)
+    role1_actions_embedding = layers.Embedding(512, 32, name='role1_actions_embedding')(role1_actions)
+    role2_actions_embedding = layers.Embedding(512, 32, name='role2_actions_embedding')(role2_actions)
 
     role1_energy = Input(shape=(self.input_steps,), name='role1_energy')
     role1_energy_embedding = layers.Embedding(5, 4, name='role1_energy_embedding')(role1_energy)
@@ -28,14 +28,14 @@ def general_input(self):
 
     role_position = Input(shape=(self.input_steps, 4), name='role_x_y')
 
-    # 感觉这种环境每次都不同，小批量数据bn可能不太稳定，这里先不用
-    # 这里加dense就是对最后一层坐标进行全连接，和timedistribute相同
+    # 感觉这种环境每次都不同，小批量数据bn可能不太稳定，需要测试
     # 步长1 距离，步长2速度
-    conv_role_position_1 = layers.Conv1D(filters=64, kernel_size=1, strides=1, padding='same')(role_position)
-    conv_role_position_2 = layers.Conv1D(filters=64, kernel_size=2, strides=1, padding='same')(role_position)
-    # normal_role_distance = BatchNormalization()(role_distance)
-
-    # actions_input = Input(shape=(self.input_steps,), name='last_action')
+    role_position_1 = layers.Conv1D(filters=32, kernel_size=1, strides=1, padding='same')(role_position)
+    role_position_2 = layers.Conv1D(filters=32, kernel_size=2, strides=1, padding='same')(role_position)
+    # role_position_1 = BatchNormalization(name='bn_1')(role_position_1)
+    # role_position_2 = BatchNormalization(name='bn_2')(role_position_2)
+    role_position_1 = layers.LeakyReLU(0.05)(role_position_1)
+    role_position_2 = layers.LeakyReLU(0.05)(role_position_2)
     actions_input = Input(shape=(self.action_steps,), name='last_action')
     actions_embedding = layers.Embedding(self.action_num, 64, name='last_action_embedding')(actions_input)
 
@@ -44,7 +44,7 @@ def general_input(self):
 
     encoder_input = [role1_actions_embedding, role2_actions_embedding,
                      # normal_role_position, normal_role_distance, normal_role_abs_distance,
-                     role_position, conv_role_position_1, conv_role_position_2, role1_energy_embedding,
+                     role_position, role_position_1, role_position_2, role1_energy_embedding,
                      role2_energy_embedding, role1_baoqi_embedding, role2_baoqi_embedding,
                      ]
     decoder_output = actions_embedding
@@ -73,7 +73,7 @@ def build_stacked_rnn_model(self):
     # t_status = layers.add([t_status, q])
     t_status = layers.Dense(512, kernel_initializer='he_uniform')(t_status)
     # 这里加bn层会造成过估计,不加的话又难以收敛。。
-    t_status = BatchNormalization()(t_status)
+    # t_status = BatchNormalization()(t_status)
     t_status = layers.LeakyReLU(0.05)(t_status)
     t_status = layers.Dense(256, kernel_initializer='he_uniform')(t_status)
     output = layers.LeakyReLU(0.05)(t_status)
@@ -103,7 +103,7 @@ def build_rnn_attention_model(self):
     # 由于只输出一次，解码也不再用rnn，而是直接全连接
     t_status = layers.concatenate([c_vector, decoder_lstm])
     t_status = layers.Dense(512, kernel_initializer='he_uniform')(t_status)
-    t_status = BatchNormalization()(t_status)
+    # t_status = BatchNormalization()(t_status)
     t_status = layers.LeakyReLU(0.05)(t_status)
     t_status = layers.Dense(256, kernel_initializer='he_uniform')(t_status)
     output = layers.LeakyReLU(0.05)(t_status)
@@ -119,7 +119,7 @@ def build_multi_attention_model(self):
 
     # 这里使用transformer建立模型读取非常慢，原因不明可能没有保存模型结构，载入需要做大量判断
     # 改成自己手动建立
-    enc_d_model = 284
+    enc_d_model = 156
     pos_encoding = positional_encoding(self.input_steps, enc_d_model)
     # 环境嵌入尺寸324
     x *= tf.math.sqrt(tf.cast(enc_d_model, tf.float32))
