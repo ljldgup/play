@@ -72,8 +72,9 @@ class ActorCritic(DoubleDQN):
             return random.randint(0, self.action_num - 1)
         else:
             # 使用np.random.choice返回采样结果
-            prob = self.predict_model.predict(self.raw_env_data_to_input(raw_data, action))
-            return np.random.choice(self.action_num, p=prob[0])
+            # prob = self.predict_model.predict(self.raw_env_data_to_input(raw_data, action))
+            # return np.random.choice(self.action_num, p=prob[0])
+            return self.predict_model.predict(self.raw_env_data_to_input(raw_data, action)).argmax()
 
     def build_model(self):
         # shared_model = self.build_shared_model()
@@ -86,13 +87,10 @@ class ActorCritic(DoubleDQN):
 
     def actor_tarin_data(self, raw_env, train_env, train_index):
         adv, td_error, action = self.critic.train_reward_generate(raw_env, train_env, train_index)
-        # 构造onehot，将1改为td_error,
-        # 使用mean(td_error * (log(action_prob)))，作为损失用于训练
-
-        # 使用一定的噪声初始化，尽可能避免概率收敛到过激值
+        # 构造onehot，将1改为td_error, 使用mean(td_error * (log(action_prob)))，作为损失用于训练
         action_onehot = np.zeros((len(action[1]), self.action_num))
 
-        # 这里即可使用价值，也可以同td_error
+        # 这里即可使用adv，也可以同td_error
         action_onehot[range(len(action[1])), action[1]] = td_error
         return action_onehot, td_error, action
 
@@ -100,12 +98,10 @@ class ActorCritic(DoubleDQN):
         # 先使用critic的td_error交叉熵训练actor，再训练critic
         # 注意这里由于PG算法限制，数据只能用一次。。。用完概率分布就改变了，公式就不满足了，PPO对此作了改进
         print(self.model_type)
-        # KofAgent.train_model_with_sum_tree(self, folder, round_nums=round_nums, batch_size=batch_size, epochs=1)
-        CommonAgent.train_model(self, folder, round_nums, batch_size, epochs)
+        self.train_model_with_sum_tree(self, folder, round_nums, batch_size, epochs)
         print('train_critic')
         self.critic.train_model(folder, round_nums=round_nums, batch_size=batch_size, epochs=epochs)
 
-    # 1000000*32/8/1024/1024≈4 一百万参数模型大小大约是4m，
     # keras 保存一些别的东西，所以模型要大一些
     def save_model(self):
         DoubleDQN.save_model(self)
@@ -165,14 +161,14 @@ class PPO(ActorCritic):
     def actor_tarin_data(self, raw_env, train_env, train_index):
         adv, td_error, action = self.critic.train_reward_generate(raw_env, train_env, train_index)
         # PPO用到运行时的分布
-        old_prob = self.target_model.predict(train_env)
-        old_action = old_prob.argmax(axis=1)
+        q = self.predict_model.predict(train_env)
+        old_action = q.argmax(axis=1)
         # 这里要用zero将无关动作置0，避免计入损失
-        reward_onehot = np.zeros_like(old_prob)
+        reward_onehot = np.zeros_like(q)
         # 这里用adv或者te_error都可以
         # reward_onehot[range(len(action[1])), action[1]] = adv[:, 0]
         reward_onehot[range(len(action[1])), action[1]] = td_error
-        return [[reward_onehot, old_prob], td_error, [old_action, action[1]]]
+        return [[reward_onehot, q], td_error, [old_action, action[1]]]
 
     def train_model(self, folder, round_nums=[], batch_size=32, epochs=30):
         self.train_model_with_sum_tree(folder, round_nums, batch_size, epochs)
@@ -202,8 +198,9 @@ class PPO(ActorCritic):
         self.record['total_epochs'] += epochs
         # PPO的参数每轮都需要更新一次，概率q分布不能太远
         self.predict_model.set_weights(self.trained_model.get_weights())
+        # 这里为什么要用target生成q，忘记了，现在看没有区别，因为q生成后就是定值，不需要另外一个模型保存
         # target_model提供q分布，所以应该也要更新
-        self.target_model.set_weights(self.trained_model.get_weights())
+        # self.target_model.set_weights(self.trained_model.get_weights())
 
         print('train_critic')
         self.critic.train_model(folder, round_nums=round_nums, batch_size=batch_size, epochs=epochs)

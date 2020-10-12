@@ -89,9 +89,9 @@ class CommonAgent:
         # 操作间隔时间步数
         self.operation_interval = 2
         # 由于action有间隔，输入序列第一个action所在的位置，方便提取action
-        self.action_begin_index = (self.input_steps - 1) % self.operation_interval
+        self.action_begin_index = self.input_steps % self.operation_interval
         # 小于1在transformer中会出错
-        self.action_steps = (self.input_steps - 1) // self.operation_interval
+        self.action_steps = self.input_steps // self.operation_interval
 
         # multi_steps 配合decay使网络趋向真实数据，但multi_steps加大会导致r波动大
         self.multi_steps = 1
@@ -143,7 +143,6 @@ class CommonAgent:
         pass
 
     # 生成未加衰减奖励的训练数据
-    # 这里把文件夹换成env_reward_generate生成的数据，避免过度耦合
     def train_env_generate(self, raw_env):
         # return [train_env_data, train_index]
         pass
@@ -157,7 +156,6 @@ class CommonAgent:
     def train_reward_generate(self, raw_env, train_env, train_index):
         return [None, None, [None, None]]
 
-    # 在线学习可以batch_size设置成
     # 改成所有数据何在一起，打乱顺序，使用batch 训练，速度快了很多
     # batch_size的选取不同，损失表现完全不一样
     def train_model(self, folder, round_nums=[], batch_size=16, epochs=30):
@@ -189,7 +187,6 @@ class CommonAgent:
         train_target, td_error, action = self.train_reward_generate(raw_env, train_env, train_index)
 
         # 根据batch内td error绝对值和生成sumtree
-
         print('train with sum tree {}/{} {} epochs'.format(folder, round_nums, epochs))
         sum_tree = SumTree(abs(td_error))
         index = sum_tree.get_index(len(td_error))
@@ -231,6 +228,8 @@ class CommonAgent:
         batch_td_error = np.r_[batch_td_error, abs(td_error[batch_num * batch_size:]).sum()]
         return SumTree(batch_td_error)
 
+    # 1000000*32/8/1024/1024≈4 一百万参数模型大小大约是4m，
+    # 模型修改后记得把原来的模型文件删掉，否则读取时会修改当前模型, 并且不会报错
     def save_model(self):
         print('save {}/model/{}_{}_{}'.format(data_dir, self.role, self.model_type, self.network_type))
         if not os.path.exists('{}/model'.format(data_dir)):
@@ -308,7 +307,7 @@ class CommonAgent:
         # print(np.array(n_action[1]))
         # print(train_reward.max())
 
-    # 输出测试，发现SeparableConv1D输出为及其稀疏,以及全连接层及其稀疏
+    # 输出测试
     def output_test(self, data):
         layer_outputs = [layer.output for layer in self.predict_model.layers]
         activation_model = Model(inputs=self.predict_model.input, outputs=layer_outputs)

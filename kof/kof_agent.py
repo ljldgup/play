@@ -30,6 +30,7 @@ input_colomns = ['role1_action', 'role2_action',
 # 读入round_nums文件下的文件，并计算reward
 def raw_env_generate(self, folder, round_nums):
     if round_nums:
+        print('load data from round {}'.format(round_nums))
         raw_env_list = []
         for i in range(0, len(round_nums)):
             if os.path.exists('{}/data/{}/{}.env'.format(data_dir, folder, round_nums[i])):
@@ -141,30 +142,28 @@ def raw_env_data_to_input(self, raw_data, action):
 def empty_env(self):
     return [[], [], [], [], [], [], [], []]
 
-
 if __name__ == '__main__':
     functions = [
         # build_multi_attention_model,
-        build_rnn_attention_model,
-        # build_stacked_rnn_model,
+        # build_rnn_attention_model,
+        build_stacked_rnn_model,
         raw_env_generate, train_env_generate,
         raw_env_data_to_input, empty_env]
-    model1 = PPO('iori', len(common_commands), functions)
+    model1 = PPO('iori', get_action_num('iori'), functions)
     # model1 = DuelingDQN('iori', get_action_num('iori'), functions)
     # critic 使用transformer时没有办法太好的收敛。。可能原因是中间传输通道的信息太窄。。
     # model1 = Critic('iori', get_action_num('iori'), functions)
     # model1 = DistributionalDQN('iori', get_action_num('iori'), functions)
     # model1.model_test(4, [1])
     # t = model1.operation_analysis(3)
-    #train_model_1by1(model1, [1], range(1, 2))
+    # train_model_1by1(model1, [16], range(1, 5))
     # model1.save_model()
     # t = model.operation_analysis(1)
 
-    '''
-    raw_env = model1.raw_env_generate(1, [1])
+    raw_env = model1.raw_env_generate(15, [5])
     train_env, train_index = model1.train_env_generate(raw_env)
     train_reward, td_error, n_action = model1.train_reward_generate(raw_env, train_env, train_index)
-
+    '''
     # 这里100 对应的是 raw_env 中 100+input_steps左右位置
 
     t = model1.predict_model.predict([np.expand_dims(env[100], 0) for env in train_env])

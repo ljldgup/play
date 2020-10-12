@@ -18,7 +18,7 @@ from kof.kof_network import build_rnn_attention_model, build_stacked_rnn_model, 
 mame.ini keyboardprovider设置成win32不然无法接受键盘输入
 autoboot_script 设置为kof.lua脚本输出对应的内存值
 '''
-mame_dir = 'D:/game/mame32/'
+mame_dir = 'D:/game/mame/'
 
 
 def raise_expection(thread):
@@ -27,11 +27,11 @@ def raise_expection(thread):
         raise e
 
 
-def train_on_mame(model, train=True, round_num=12):
+def train_on_mame(model, train=True, round_num=15):
     executor = ThreadPoolExecutor(6)
     # 每次打完训练次数,太大容易极端化
     epochs = 40
-
+    train_interval = 3
     data_dir = os.getcwd() + '/data/'
     # 存放数据路径
     folder_num = 1
@@ -63,7 +63,7 @@ def train_on_mame(model, train=True, round_num=12):
     tmp_env = []
     # 运行mame,直接使用cwd参数切换目录会导致mame卡住一会，原因不明
     os.chdir(mame_dir)
-    s = subprocess.Popen(mame_dir + '/mame.exe', bufsize=0, stdout=subprocess.PIPE, universal_newlines=True)
+    s = subprocess.Popen(mame_dir + '/mame64.exe', bufsize=0, stdout=subprocess.PIPE, universal_newlines=True)
     count = 0
     try:
         while count <= round_num:
@@ -83,19 +83,21 @@ def train_on_mame(model, train=True, round_num=12):
                         pause()
                         # 保存环境，动作
                         if len(tmp_action) > 10:
-                            record_file = '{}.'.format(int(count))
-                            np.savetxt(data_dir + '/' + record_file + 'act', np.array(tmp_action))
-                            np.savetxt(data_dir + '/' + record_file + 'env', np.array(tmp_env))
+                            np.savetxt('{}/{}.act'.format(data_dir, count), np.array(tmp_action))
+                            np.savetxt('{}/{}.env'.format(data_dir, count), np.array(tmp_env))
                             # 查看刚刚动作对不对，因为e-greedy会有少数随机，如果很大比例是false说明训练数据和实时数据不一样
                             # PPO查看时要把按概率采样的函数注释掉，用原来的argmax版本
-                            print('实时动作与训练数据输出动作比较')
+                            print('实时动作与训练数据输出动作比较 {}'.format(count))
                             model.model_test(folder_num, [count])
-                            if train:
+
+                            if train and count > 1 and (count - 1) % train_interval == 0:
                                 print(str(time.asctime(time.localtime(time.time()))))
-                                model.train_model(folder_num, [count], epochs=epochs)
+                                model.train_model(folder_num, list(range(count - train_interval, count)),
+                                                  epochs=epochs)
                                 # 注意copy_interval设置成1的话那么，每次训练实际上两个模型是一样的，就是nature dqn
-                                if count % model.copy_interval == 0:
-                                    model.save_model()
+
+                            if count % model.copy_interval == 0:
+                                model.save_model()
                             # 观察每次训练后的情况，如果变化过大的话，说明学习率太大
                             print('训练后动作变化情况')
                             dqn_model.model_test(folder_num, [count])
@@ -138,7 +140,7 @@ def train_on_mame(model, train=True, round_num=12):
                             keys = model.choose_action(None, None, random_choose=True)
                         else:
                             keys = model.choose_action(np.array([tmp_env[-model.input_steps:]]),
-                                                       np.array([tmp_action[-model.input_steps + 1:]]),
+                                                       np.array([tmp_action[-model.input_steps:]]),
                                                        random_choose=False)
 
                         # common_commands通用按键，无需分左右，交给网络自己判断
@@ -149,11 +151,9 @@ def train_on_mame(model, train=True, round_num=12):
                         if data[4] > data[6]:  # 1p 在右边
                             # t = executor.submit(operation, keys, True)
                             executor.submit(operation, keys, True)
-                            # operation(keys, True)
                         else:
                             # t = executor.submit(operation, keys)
                             executor.submit(operation, keys)
-                            # operation(keys)
                         # 没动做很可能是线程异常，这里不会报，需要提交异常，这里影响效率，有必要再用
                         # executor.submit(raise_expection, t)
                     else:
@@ -176,18 +176,18 @@ if __name__ == '__main__':
 
     global_set(role)
     # dqn_model = DoubleDQN('iori')
-    functions = [  # build_stacked_rnn_model,
-        # build_rnn_attention_model,
-        build_multi_attention_model,
-        raw_env_generate, train_env_generate,
-        raw_env_data_to_input, empty_env]
+    functions = [build_stacked_rnn_model,
+                 # build_rnn_attention_model,
+                 # build_multi_attention_model,
+                 raw_env_generate, train_env_generate,
+                 raw_env_data_to_input, empty_env]
     dqn_model = PPO('ioriVSkyo', get_action_num('iori'), functions)
     # dqn_model = DuelingDQN('iori', get_action_num('iori'), functions)
     # dqn_model = DistributionalDQN('iori', get_action_num('iori'), functions)
     # QuantileRegressionDQN有bug，会过估计，暂时不明白错误在哪里
     # dqn_model = QuantileRegressionDQN()
     # dqn_model = RandomAgent('iori')
-    round_num = 30
+    round_num = 40
     # folder_num, count = train_on_mame(dqn_model, False)
     folder_num, count = train_on_mame(dqn_model, True, round_num)
     # dqn_model.train_model(folder_num, epochs=20)

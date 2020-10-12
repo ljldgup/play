@@ -68,4 +68,4 @@ if __name__ == '__main__':
     t = np.array(sum_tree.get_index(1000))
     hist = [len(t[t == i]) for i in range(len(td_error))]
     hist = np.array(hist)
-    hist /= hist.min()
+    hist = hist/hist.min()

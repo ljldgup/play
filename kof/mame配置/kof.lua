@@ -49,8 +49,8 @@ function test()
                 s = s..mem:read_i16(0x108372).." "
 
                 --12p xy坐标
-                t = mem:read_i16(0X108118)/760
-                s = s..t.." "
+                t = mem:read_i16(0X108118)
+                s = s..mem:read_i16(0X108118).." "
                 t = mem:read_i16(0x108120)/128
                 s = s..t.." "
                 t = mem:read_i16(0X108318)/760

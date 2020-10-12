@@ -11,7 +11,6 @@ batch_size = 64
 # SelfAttention 与 attention相比没有rnn层，直接计算权重，加权
 # 如果要加残差，输出输出尺寸一样，那么参数数量应该是time_steps*seq_len*3
 # Query 和 Key 在具体任务中可能是不同的，这里是self attention均采用输入、
-# 这个模型应该是multihead了,输出的是和时间步同样的数量
 class SelfAttention(layers.Layer):
 
     def __init__(self, output_dim, **kwargs):

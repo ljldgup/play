@@ -54,16 +54,16 @@ def general_input(self):
 
 # 多层rnn堆叠
 def build_stacked_rnn_model(self):
-    model_input, encoder_input, decoder_output = general_input(self)
     self.network_type = 'stacked_rnn_model'
+    model_input, encoder_input, decoder_output = general_input(self)
 
     # 分开做rnn效果不好
     # 这里使用结合的
     concatenate_layers = layers.concatenate(encoder_input)
-
+    bn_concatenate_layers = BatchNormalization()(concatenate_layers)
     # 目前 512 - 1024 的效果好，但数据量较大
-    t = CuDNNLSTM(512, return_sequences=True)(concatenate_layers)
-    t_status = CuDNNLSTM(1024)(t)
+    t_status = CuDNNLSTM(512, return_sequences=True)(bn_concatenate_layers)
+    t_status = CuDNNLSTM(1024)(t_status)
     # 双向lstm,效果不好
     # t_status = Bidirectional(CuDNNLSTM(1024))(concatenate_layers)
     decoder_lstm = CuDNNLSTM(256, return_sequences=True)(decoder_output)
@@ -72,8 +72,7 @@ def build_stacked_rnn_model(self):
     # 不是同一内容起源的最好不要用add
     # t_status = layers.add([t_status, q])
     t_status = layers.Dense(512, kernel_initializer='he_uniform')(t_status)
-    # 这里加bn层会造成过估计,不加的话又难以收敛。。
-    # t_status = BatchNormalization()(t_status)
+
     t_status = layers.LeakyReLU(0.05)(t_status)
     t_status = layers.Dense(256, kernel_initializer='he_uniform')(t_status)
     output = layers.LeakyReLU(0.05)(t_status)
@@ -90,21 +89,18 @@ def build_rnn_attention_model(self):
 
     # 目前来看在rnn前或中间加dense层效果很差
     encoder_concatenate = layers.concatenate(encoder_input)
-
+    bn_concatenate_layers = BatchNormalization()(encoder_concatenate)
     # lstm返回多返回一个传动带变量，这里不需要
-    values, h_env, _ = CuDNNLSTM(1024, return_sequences=True, return_state=True)(encoder_concatenate)
+    values, h_env, _ = CuDNNLSTM(1024, return_sequences=True, return_state=True)(bn_concatenate_layers)
     # 这里模仿解码器的过程，将上一次的输出和hidden state 与 encoder_input合并作为query，这里输入的query远小于h，是个问题。。
     # embedding后多了一个维度尺寸，压平才能与h conact
-    decoder_lstm, h_act, _ = CuDNNLSTM(128, return_sequences=True, return_state=True)(decoder_output)
+    decoder_lstm, h_act, _ = CuDNNLSTM(256, return_sequences=True, return_state=True)(decoder_output)
     decoder_lstm = CuDNNLSTM(256)(decoder_lstm)
-    h = layers.concatenate([h_act, h_act])
-    c_vector, _ = BahdanauAttention(256)(h, values)
+    query = layers.concatenate([h_env, h_act])
+    c_vector, _ = BahdanauAttention(512)(query, values)
     # 这里我是多对一，同一序列只解码一次，所以直接用encoder的输出隐藏状态
     # 由于只输出一次，解码也不再用rnn，而是直接全连接
     t_status = layers.concatenate([c_vector, decoder_lstm])
-    t_status = layers.Dense(512, kernel_initializer='he_uniform')(t_status)
-    # t_status = BatchNormalization()(t_status)
-    t_status = layers.LeakyReLU(0.05)(t_status)
     t_status = layers.Dense(256, kernel_initializer='he_uniform')(t_status)
     output = layers.LeakyReLU(0.05)(t_status)
     shared_model = Model(model_input, output)

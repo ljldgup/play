@@ -38,6 +38,7 @@ data_dir = os.getcwd()
 
 
 # 自定义损失，无关动作不提供梯度
+# 好像不太合理，其他的q值不应该能随意变动
 def dqn_loss(y_true, y_pred):
     sign = tf.where(y_true == 0., 0., 1.)
     delta = y_true - y_pred
@@ -61,10 +62,11 @@ class DoubleDQN(CommonAgent):
         shared_model = self.base_network_build_fn()
         # shared_model = build_multi_attention_model(self.input_steps)
         t_status = shared_model.output
-        output = layers.Dense(self.action_num, kernel_initializer='he_uniform')(t_status)
+        output = layers.Dense(self.action_num)(t_status)
         model = Model(shared_model.input, output, name=self.model_type)
 
-        model.compile(optimizer=Adam(lr=self.lr), loss=dqn_loss)
+        # model.compile(optimizer=Adam(lr=self.lr), loss=dqn_loss)
+        model.compile(optimizer=Adam(lr=self.lr), loss='mse')
 
         return model
 
@@ -79,11 +81,14 @@ class DoubleDQN(CommonAgent):
         # pre_prediction = predict_model_prediction.copy()
         pre_actions = predict_model_prediction.argmax(axis=1)
 
-        # 由训练模型选动作，target模型根据动作估算q值，不关心是否最大
+        # 每回合时间应该逐步减小，回合结束，时间上升
+        time_diff = raw_env['time'].reindex(train_index).diff(1).shift(-1).fillna(1).values
+
+        # 由训练模型选动作，target模型根据动作估算q值生成训练数据，不关心是否最大
         # yj=Rj + γQ′(ϕ(S′j), argmaxa′Q(ϕ(S′j), a, w), w′)
-        time = raw_env['time'].reindex(train_index).diff(1).shift(-1).fillna(1).values
         # 这里应该用采取的行为，如果采用过去的记录训练，这里预测值不是实际采取的值
         next_q = target_model_prediction[range(len(train_index)), action]
+
         '''
         print(predict_model_prediction[range(20), action[:20]])
         print(reward.values[:20])
@@ -97,23 +102,25 @@ class DoubleDQN(CommonAgent):
         print('multi steps: ', self.multi_steps)
         # 将1到multi_steps个步骤的r，乘以衰减后相加
         # 这里原本有一个所以只需要做multi_steps - 1 次
-        next_reward = reward.copy()
+        next_r = reward.copy()
         for i in range(self.multi_steps - 1):
-            next_reward = np.roll(next_reward, -1)
+            next_r = np.roll(next_r, -1)
             # 从下一个round往上移动的，reward为0
-            next_reward[time > 0] = 0
-            reward += next_reward * self.reward_decay ** (i + 1)
+            next_r[time_diff > 0] = 0
+            reward += next_r * self.reward_decay ** (i + 1)
 
         # 加上target model第multi_steps+1个步骤的Q值
         for i in range(self.multi_steps):
             next_q = np.roll(next_q, -1)
             # 从下一个round往上移动的，reward为0
-            next_q[time > 0] = 0
+            next_q[time_diff > 0] = 0
         reward += next_q * self.reward_decay ** self.multi_steps
 
         td_error = reward - predict_model_prediction[range(len(train_index)), action]
         # 这里报action过多很可能是人物不对
-        train_reward = np.zeros_like(predict_model_prediction)
+        # 使用zero初始化，是为了配合自定义的dqn_loss，去掉无关动作对其影响，是否合理未知
+        # train_reward = np.zeros_like(predict_model_prediction)
+        train_reward = predict_model_prediction.copy()
         train_reward[range(len(train_index)), action] = reward
         '''
         # 上下限裁剪，防止过估计

@@ -1,12 +1,20 @@
+mame配置
+运行mame.exe -createconfig
+修改 mame.ini
+autoboot_script           kof.lua
 读取按键需要吧mame，keyboardprovider 设置为        win32，并且调用win32api.keybd_event提供扫描码才可以
 
 内存输出由lua脚本负责，lua脚本和游戏运行为单线程，所以没法sleep，只能注册hook，每帧渲染时调用，达到一定帧数时输出。
 
+需要debug 把debug设置成1
+
 mame设置家用机
 
 tab dip-switch setting mode on
-reset， abc一起按，加region设置为japan console，c退出
+reset， abc一起按住2s，加region设置为japan console，c退出
 然后tab dip-switch setting mode off 退出重启
+
+
 
 
 1p 人物  108171
