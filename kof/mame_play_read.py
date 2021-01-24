@@ -18,7 +18,7 @@ from kof.kof_network import build_rnn_attention_model, build_stacked_rnn_model, 
 mame.ini keyboardprovider设置成win32不然无法接受键盘输入
 autoboot_script 设置为kof.lua脚本输出对应的内存值
 '''
-mame_dir = 'D:/game/mame/'
+mame_dir = 'D:/Program Files (x86)/mame'
 
 
 def raise_expection(thread):
@@ -33,6 +33,9 @@ def train_on_mame(model, train=True, round_num=15):
     epochs = 40
     train_interval = 3
     data_dir = os.getcwd() + '/data/'
+    if not os.path.exists(data_dir):
+        os.mkdir(data_dir)
+
     # 存放数据路径
     folder_num = 1
     while os.path.exists(data_dir + str(folder_num)):
@@ -63,14 +66,17 @@ def train_on_mame(model, train=True, round_num=15):
     tmp_env = []
     # 运行mame,直接使用cwd参数切换目录会导致mame卡住一会，原因不明
     os.chdir(mame_dir)
-    s = subprocess.Popen(mame_dir + '/mame64.exe', bufsize=0, stdout=subprocess.PIPE, universal_newlines=True)
+
+    # 这里不指定stdin,stdout没法用
+    s = subprocess.Popen(mame_dir + '/mame.exe', bufsize=0, stdin=subprocess.PIPE,
+                         stdout=subprocess.PIPE, universal_newlines=True)
     count = 0
     try:
         while count <= round_num:
             line = s.stdout.readline()
             if line:
-                # 去掉\n
-                data = list(map(float, line[:-1].split(" ")))
+                # [:-1]去掉\n
+                data = list(map(float, line[:-1].split("\t")))
 
                 # 根据4个币判断是否game over，输了直接重新开始不续币
                 if data[-1] == 4:
@@ -80,7 +86,7 @@ def train_on_mame(model, train=True, round_num=15):
                     # 发现重启前时间过长，某些模拟打斗，动画也会造成卡顿
                     if count > 0:
                         # 暂停游戏，游戏在运行一定时间后，内存容易出现不可控情况，导致卡顿
-                        pause()
+                        # pause()
                         # 保存环境，动作
                         if len(tmp_action) > 10:
                             np.savetxt('{}/{}.act'.format(data_dir, count), np.array(tmp_action))
@@ -101,7 +107,7 @@ def train_on_mame(model, train=True, round_num=15):
                             # 观察每次训练后的情况，如果变化过大的话，说明学习率太大
                             print('训练后动作变化情况')
                             dqn_model.model_test(folder_num, [count])
-                            pause()  # 开始游戏
+                            # pause()
                     print("重开")
                     tmp_action = []
                     tmp_env = []
@@ -125,8 +131,9 @@ def train_on_mame(model, train=True, round_num=15):
 
                     print('greedy:', model.e_greedy)
 
-                    # 重启，role用来选人
-                    restart()
+                    # 重启,mame得到输入后自动重新选人，在lua中实现
+                    s.stdin.write("0\n")  # 开始游戏
+                    s.stdin.flush()
 
                 else:
                     tmp_env.append(data)
@@ -143,23 +150,20 @@ def train_on_mame(model, train=True, round_num=15):
                                                        np.array([tmp_action[-model.input_steps:]]),
                                                        random_choose=False)
 
-                        # common_commands通用按键，无需分左右，交给网络自己判断
-                        # executor.submit(common_operation, common_commands[keys])
-                        # print(keys, ':', line)
-
+                        # 非招式，通用按键，无需分左右，交给网络自己判断
+                        # lua中貌似没有0
                         # 按键采用一个新的线程执行，
-                        if data[4] > data[6]:  # 1p 在右边
-                            # t = executor.submit(operation, keys, True)
-                            executor.submit(operation, keys, True)
-                        else:
-                            # t = executor.submit(operation, keys)
-                            executor.submit(operation, keys)
-                        # 没动做很可能是线程异常，这里不会报，需要提交异常，这里影响效率，有必要再用
-                        # executor.submit(raise_expection, t)
+                        # if data[4] > data[6]:  # 1p 在右边
+                        #    executor.submit(operation, keys, True)
+                        # else:
+                        #    executor.submit(operation, keys)
                     else:
                         # 如果不在操作的步长上，直接返回-1，不采取任何操作
                         # -1代表没有任何操作，而0,5等都是回中或者防御，回对当前状态造成影响
                         keys = -1
+                    s.stdin.write(str(keys) + '\n')
+                    s.stdin.flush()
+                    print(keys,'input')
                     tmp_action.append(keys)
     except:
         traceback.print_exc()

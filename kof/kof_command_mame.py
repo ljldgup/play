@@ -105,7 +105,8 @@ def global_set(chosen_role):
 
 
 def get_action_num(chosen_role):
-    return len(role_commands[chosen_role])
+    # return len(role_commands[chosen_role])
+    return 16
 
 
 def pause():
