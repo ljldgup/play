@@ -81,13 +81,13 @@ class CommonAgent:
         self.empty_env = types.MethodType(functions[4], self)
         self.reward_decay = 0.999
         # 输入步数
-        self.input_steps = 6
+        self.input_steps = 8
 
         # 训练时会重置
         self.e_greedy = 0
 
         # 操作间隔时间步数
-        self.operation_interval = 2
+        self.operation_interval = 1
         # 由于action有间隔，输入序列第一个action所在的位置，方便提取action
         self.action_begin_index = self.input_steps % self.operation_interval
         # 小于1在transformer中会出错

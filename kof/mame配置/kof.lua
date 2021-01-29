@@ -137,30 +137,44 @@ end
 
 restarted = false
 restart_step = 1000
-restart_buttons={start, start, down, down}
 
-for i=5, 200, 1 do
+
+restart_buttons={start, button2, down, button2 , down}
+for i=6, 200, 1 do
     restart_buttons[i] = button1
 end
 
-total_steps = 100
-step_interval = 10
 
+start_step = 0
 function restart()
-    --restarted 将restarted将每次game over后的输出限制到一次，避免输出过多造成卡死
-    print("4")
-    restart_step = step_interval
+    if not restarted then
+        --防止之前某些键被按住无法生效
+        all_release()
+        --restarted 将restarted将每次game over后的输出限制到一次，避免输出过多造成卡死
+        print("4")
+        --等待计算完再重启
+        -- io.read("*num")
+        restart_step = step_interval
+        start_step = 1
+        restarted = true
+    end
+    start.field:set_value(start_step%2)
+    start_step = start_step + 1
 end
+
+--total_steps 太长会导致人物没有设置
+total_steps = 240
+step_interval = 18
 
 --重启选人
 function restarting()
     print(restart_step)
     if restart_step % step_interval == 0 then
-        print(restart_step//step_interval, restart_buttons[restart_step//step_interval].desc, "press")
+        --print(restart_step//step_interval, restart_buttons[restart_step//step_interval].desc, "press")
         restart_buttons[restart_step//step_interval].field:set_value(1)
     end
-    if restart_step % step_interval == 5 then
-        print(restart_step//step_interval, restart_buttons[restart_step//step_interval].desc, "release")
+    if restart_step % step_interval == step_interval//2 then
+        --print(restart_step//step_interval, restart_buttons[restart_step//step_interval].desc, "release")
         restart_buttons[restart_step//step_interval].field:set_value(0)
     end
     if restart_step > total_steps then
@@ -171,6 +185,8 @@ function restarting()
     end
     restart_step = restart_step + 1
 end
+
+math.randomseed(tostring(os.time()):reverse():sub(1, 7))
 
 function running()
     -- 设定成固定人物
@@ -201,10 +217,10 @@ function running()
         act2 = mem:read_i16(0x108372)
 
         --12p xy坐标
-        x1 = mem:read_i16(0X108118)
-        y1 = mem:read_i8(0X108121)
-        x2 = mem:read_i16(0X108318)
-        y2 = mem:read_i8(0X108321)
+        x1 = mem:read_i16(0X108118)/768
+        y1 = mem:read_i8(0X108121)/128
+        x2 = mem:read_i16(0X108318)/768
+        y2 = mem:read_i8(0X108321)/128
 
         --energy
         energy1 = mem:read_i8(0x1082E3)
@@ -230,10 +246,11 @@ function running()
         --时间用来结合血量判断状态，用于生成reward
         --币数用来判断是否输掉，家用机game币数会回到4
         print(act1, act2, x1, y1, x2, y2, energy1, energy2, baoqi1, baoqi2, role1, role2, guard_value1, count1, life1, life2, countdown, coin)
-
-        action_num = io.read("*num")
+        action_num = math.random(1,16)
+        --action_num = io.read("*num")
         operation(action_num)
     end
+    restarted = false
 end
 
 
@@ -252,20 +269,17 @@ function func()
         --print("coin", coin)
         --用掉了一个币，此时在进行游戏
         if  coin~=4 then
-            if restart_step < total_steps + 2 then
+            if restart_step < total_steps + 3 then
                 restarting()
             else
                 running()
             end
         else
-            if restart_step > total_steps then
-                restart()
-            else
-                restarting()
-            end
+            restart()
         end
         frames = 0
     end
 end
 
 emu.register_frame_done(func)
+

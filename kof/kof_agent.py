@@ -103,16 +103,16 @@ def train_env_generate(self, raw_env):
     for index in raw_env['reward'][raw_env['action'] != -1].index:
         # 这里是loc取的数量是闭区间和python list不一样
         # guard_value不用，放在这里先补齐
-        env = raw_env[input_colomns].loc[index - self.input_steps + 1:index]
+        data = raw_env[input_colomns].loc[index - self.input_steps + 1:index].values
+        action = raw_env['action'].loc[
+                 index - self.input_steps + 1 - self.operation_interval:index - self.operation_interval].values
         # 这里len(env)==self.input_steps 保证了index - self.input_steps + 1>0
-        if len(env) != self.input_steps or \
-                raw_env['time'].loc[index - self.input_steps + 1] < raw_env['time'].loc[index]:
+        if len(data) != self.input_steps or len(action) != self.input_steps or raw_env['time'].loc[
+            index - self.input_steps + 1] < raw_env['time'].loc[index]:
             pass
         else:
-            data = env.values
             data = data.reshape(1, *data.shape)
-            # action为了和实时输入一致，去除最后一次动作，因为这次动作是根据当前环境预测出来的
-            action = env['action'].values[:-1]
+            # action为了和实时输入一致，去除最后一次动作，因为这次动作是根据当前环境预测出来的         action = env['action'].values[:-1]
             action = action.reshape(1, *action.shape)
             split_data = self.raw_env_data_to_input(data, action)
             for i in range(len(split_data)):
@@ -141,6 +141,7 @@ def raw_env_data_to_input(self, raw_data, action):
 # 这里返回的list要和raw_env_data_to_input返回的大小一样
 def empty_env(self):
     return [[], [], [], [], [], [], [], []]
+
 
 if __name__ == '__main__':
     functions = [
