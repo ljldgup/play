@@ -153,7 +153,7 @@ function restart()
         --restarted 将restarted将每次game over后的输出限制到一次，避免输出过多造成卡死
         print("4")
         --等待计算完再重启
-        -- io.read("*num")
+        io.read("*num")
         restart_step = step_interval
         start_step = 1
         restarted = true
@@ -168,7 +168,7 @@ step_interval = 18
 
 --重启选人
 function restarting()
-    print(restart_step)
+    --print(restart_step)
     if restart_step % step_interval == 0 then
         --print(restart_step//step_interval, restart_buttons[restart_step//step_interval].desc, "press")
         restart_buttons[restart_step//step_interval].field:set_value(1)
@@ -246,8 +246,9 @@ function running()
         --时间用来结合血量判断状态，用于生成reward
         --币数用来判断是否输掉，家用机game币数会回到4
         print(act1, act2, x1, y1, x2, y2, energy1, energy2, baoqi1, baoqi2, role1, role2, guard_value1, count1, life1, life2, countdown, coin)
-        action_num = math.random(1,16)
-        --action_num = io.read("*num")
+        
+        --action_num = math.random(1,16)
+        action_num = io.read("*num")
         operation(action_num)
     end
     restarted = false
@@ -282,4 +283,3 @@ function func()
 end
 
 emu.register_frame_done(func)
-
