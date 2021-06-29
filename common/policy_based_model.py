@@ -2,11 +2,11 @@ import os
 import random
 
 import numpy as np
+from tensorflow.python.keras.optimizers import Adam
 
 from common.agent import CommonAgent, get_maxsize_file
 from tensorflow.keras import layers
 from tensorflow.python.keras import Input, Model
-from tensorflow.keras.optimizers import Adam
 from tensorflow.keras import losses
 from tensorflow.keras import backend as K
 import tensorflow as tf

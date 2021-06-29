@@ -18,9 +18,15 @@ class RandomAgent:
         self.input_steps = 1
         # 操作间隔步数
         self.operation_interval = 2
+        self.model_type = 'random'
+        self.network_type = 'none'
+
 
     def choose_action(self, *args, **kwargs):
         return random.randint(0, self.action_num - 1)
+
+    def train_model(self, *args, **kwargs):
+        pass
 
     def save_model(self):
         pass

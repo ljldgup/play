@@ -1,4 +1,4 @@
-import tensorflow.keras.backend as K
+import tensorflow.keras as K
 from tensorflow.keras import layers
 
 import numpy as np

@@ -12,11 +12,17 @@ virtual_key_map = {key: win32api.MapVirtualKey(keys_map[key], 0) for key in keys
 direct_key_list = {1: set('24'), 2: set('2'), 3: set('26'), 4: set('4'),
                    5: set(''), 6: set('6'), 7: set('48'), 8: set('8'), 9: set('68')}
 # 反方向映射
-opposite_direction = {1: 3, 2: 2, 3: 1, 4: 6, 5: 5, 6: 4}
+opposite_direction = {'1': '3', '2': '2', '3': '1', '4': '6', '5': '5', '6': '4', '7': '9', '8': '8', '9': '7',
+                      '10': '10', '11': '11', '12': '12', '13': '13', '14': '14',
+                      '15': '15', '16': '16'}
 
 action_key_list = {0: '', 1: 'a', 2: 'b', 3: 'c', 4: 'd', 5: 'ab', 6: 'cd', 7: 'abc'}
 
 remain_direction = {}
+
+"""
+这个文件主要用于之前的按键测试，如果要测lua输入，直接cmd启动mame，然后输入指令串就可以了
+"""
 
 # 如果实际发现很多没有写的招式，大概率是左右搞错了
 
@@ -104,9 +110,9 @@ def global_set(chosen_role):
     role = chosen_role
 
 
-def get_action_num(chosen_role):
+def get_action_num():
     # return len(role_commands[chosen_role])
-    return 16
+    return len(stdin_commands)
 
 
 def pause():
@@ -268,8 +274,28 @@ def common_operation_test():
         common_operation((5, None))
 
 
+stdin_commands = [
+    (4,),
+    (1,),
+    (10,),
+    (11,),
+    (12,),
+    (13,),
+    (14,),
+    (6, 2, 3, 10),
+    (2, 3, 6, 10),
+    (6, 2, 1, 4, 11),
+    (2, 1, 4, 10),
+    (6, 2, 1, 4, 11),
+    (2, 3, 6, 2, 1, 4, 10),
+]
+
 if __name__ == '__main__':
     time.sleep(2)
     # global_set('kyo')
     # test()
     operation_test('iori')
+
+    """
+    这个文件主要用于之前的按键测试，如果要测lua输入，直接cmd启动mame，然后输入指令串就可以了
+    """
