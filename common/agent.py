@@ -20,7 +20,7 @@ class RandomAgent:
         self.operation_interval = 2
         self.model_type = 'random'
         self.network_type = 'none'
-
+        self.copy_interval = 100
 
     def choose_action(self, *args, **kwargs):
         return random.randint(0, self.action_num - 1)

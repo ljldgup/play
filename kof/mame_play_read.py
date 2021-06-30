@@ -179,22 +179,26 @@ def running(mame, model, data):
         tmp_action.append(cmd_index)
         print()
 
-    # key = commands.pop(0)
+    if commands:
+        cmd = commands.pop(0)
+    else:
+        # 第0个commands为空, 执行方向5，
+        cmd = 5
 
     # 用于调试
-    key = input()
-    if not key:
-        key = 5
+    # key = input()
+    # if not key:
+    #     key = 5
 
     if data[2] > data[4]:
-        key = opposite_direction[key]
-    print(key, end=",")
+        cmd = opposite_direction[cmd]
+    print(cmd, end=",")
 
-    mame.stdin.write(str(key) + '\n')
+    mame.stdin.write(str(cmd) + '\n')
     mame.stdin.flush()
 
     if not choosed:
-        tmp_action.append(-1);
+        tmp_action.append(0);
 
 
 if __name__ == '__main__':
@@ -207,7 +211,7 @@ if __name__ == '__main__':
                  # build_multi_attention_model,
                  raw_env_generate, train_env_generate,
                  raw_env_data_to_input, empty_env]
-    # dqn_model = PPO('ioriVSkyo', get_action_num('iori'), functions)
+    # dqn_model = PPO(role='iori', action_num=get_action_num(), functions=functions)
     # dqn_model = DuelingDQN('iori', get_action_num('iori'), functions)
     # dqn_model = DistributionalDQN('iori', get_action_num('iori'), functions)
     # QuantileRegressionDQN有bug，会过估计，暂时不明白错误在哪里
