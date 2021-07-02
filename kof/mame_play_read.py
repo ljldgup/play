@@ -211,12 +211,12 @@ if __name__ == '__main__':
                  # build_multi_attention_model,
                  raw_env_generate, train_env_generate,
                  raw_env_data_to_input, empty_env]
-    # dqn_model = PPO(role='iori', action_num=get_action_num(), functions=functions)
+    dqn_model = PPO(role='iori', action_num=get_action_num(), functions=functions)
     # dqn_model = DuelingDQN('iori', get_action_num(), functions)
     # dqn_model = DistributionalDQN('iori', get_action_num('iori'), functions)
     # QuantileRegressionDQN有bug，会过估计，暂时不明白错误在哪里
     # dqn_model = QuantileRegressionDQN()
-    dqn_model = RandomAgent(role='iori', action_num=get_action_num())
+    # dqn_model = RandomAgent(role='iori', action_num=get_action_num())
     # # 公司电脑第一次预测特别慢，所以先预测一次在训练
     # dqn_model.predict_model.predict(
     #     [np.random.randn(1, 8), np.random.randn(1, 8), np.random.randn(1, 8), np.random.randn(1, 8),

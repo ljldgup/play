@@ -101,16 +101,16 @@ def raw_env_generate(self, folder, round_nums):
 def train_env_generate(self, raw_env):
     train_env_data = self.empty_env()
 
-    train_reward_reward = []
+    actions = raw_env['action'][raw_env['action'] != -1]
     train_index = []
-    for index in raw_env[raw_env['action'] != -1].index:
+    for index in actions.index:
         # 这里是loc取的数量是闭区间和python list不一样
         # guard_value不用，放在这里先补齐
         data = raw_env[input_colomns].loc[index - self.input_steps + 1:index].values
-        action = raw_env['action'].loc[
-                 index - self.input_steps + 1 - self.operation_interval:index - self.operation_interval].values
+        action = actions.loc[index - self.input_steps + 1:index].values
         # 这里len(env)==self.input_steps 保证了index - self.input_steps + 1>0
         if len(data) != self.input_steps or len(action) != self.input_steps or raw_env['time'].loc[
+            #没有重开
             index - self.input_steps + 1] < raw_env['time'].loc[index]:
             pass
         else:
