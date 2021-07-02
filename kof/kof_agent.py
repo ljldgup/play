@@ -125,6 +125,8 @@ def train_env_generate(self, raw_env):
                 raw_env['reward'].loc[train_index[-1]] = get_reward(raw_env, train_index[-1], index)
             train_index.append(index)
 
+    raw_env['reward'] = raw_env['reward']/50
+
     train_env_data = [np.array(env) for env in train_env_data]
     # 去掉原来的长度为1的sample数量值
     train_env_data = [env.reshape(env.shape[0], *env.shape[2:]) for env in train_env_data]
@@ -174,6 +176,7 @@ if __name__ == '__main__':
     raw_env = model1.raw_env_generate(1, [1])
     train_env, train_index = model1.train_env_generate(raw_env)
     train_reward, td_error, n_action = model1.train_reward_generate(raw_env, train_env, train_index)
+    model1.train_model(1, [1])
     '''
     # 这里100 对应的是 raw_env 中 100+input_steps左右位置
 

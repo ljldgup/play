@@ -63,7 +63,7 @@ class ActorCritic(DoubleDQN):
         #                      model_type=model_type + "_critic")
         super().__init__(role=role, action_num=action_num, functions=functions,
                          model_type=model_type)
-        self.train_reward_generate = self.actor_tarin_data
+        self.train_reward_generate = self.actor_train_data
         self.actor = self.predict_model
 
     # 要比较即时和数据预测结果是否一致的时候用argmax的版本
@@ -85,7 +85,7 @@ class ActorCritic(DoubleDQN):
         model.compile(optimizer=Adam(lr=self.lr), loss=losses.categorical_crossentropy)
         return model
 
-    def actor_tarin_data(self, raw_env, train_env, train_index):
+    def actor_train_data(self, raw_env, train_env, train_index):
         adv, td_error, action = self.critic.train_reward_generate(raw_env, train_env, train_index)
         # 构造onehot，将1改为td_error, 使用mean(td_error * (log(action_prob)))，作为损失用于训练
         action_onehot = np.zeros((len(action[1]), self.action_num))
@@ -158,7 +158,7 @@ class PPO(ActorCritic):
         model.compile(optimizer=Adam(lr=self.lr), loss=None)
         return model
 
-    def actor_tarin_data(self, raw_env, train_env, train_index):
+    def actor_train_data(self, raw_env, train_env, train_index):
         adv, td_error, action = self.critic.train_reward_generate(raw_env, train_env, train_index)
         # PPO用到运行时的分布
         q = self.predict_model.predict(train_env)
@@ -246,7 +246,7 @@ class DDPG(ActorCritic):
         model.compile(optimizer=Adam(lr=self.lr), loss=DDPG_loss)
         return model
 
-    def actor_tarin_data(self, raw_env, train_env, train_index):
+    def actor_train_data(self, raw_env, train_env, train_index):
         _, td_error, action = self.critic.train_reward_generate(raw_env, train_env, train_index)
         # PPO用到运行时的分布
         action_onehot = np.random.rand(10, 20)[len(action[1]), self.action_num] / 100
