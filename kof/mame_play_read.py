@@ -198,7 +198,7 @@ def running(mame, model, data):
     mame.stdin.flush()
 
     if not choosed:
-        tmp_action.append(0);
+        tmp_action.append(-1)
 
 
 if __name__ == '__main__':
@@ -212,7 +212,7 @@ if __name__ == '__main__':
                  raw_env_generate, train_env_generate,
                  raw_env_data_to_input, empty_env]
     # dqn_model = PPO(role='iori', action_num=get_action_num(), functions=functions)
-    # dqn_model = DuelingDQN('iori', get_action_num('iori'), functions)
+    # dqn_model = DuelingDQN('iori', get_action_num(), functions)
     # dqn_model = DistributionalDQN('iori', get_action_num('iori'), functions)
     # QuantileRegressionDQN有bug，会过估计，暂时不明白错误在哪里
     # dqn_model = QuantileRegressionDQN()

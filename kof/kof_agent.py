@@ -49,31 +49,33 @@ def raw_env_generate(self, folder, round_nums):
         # 筛选时间在流动的列
         raw_env = raw_env[raw_env['time'].diff(1).shift(-1).fillna(1) < 0]
 
-        # 这里改成self.operation_interval步一操作，所以diff改成对应的偏移
-        role1_life_reward = raw_env['role1_life'].diff(-self.operation_interval).fillna(0)
-        # 这里是向后比较所以正常返回正值，负的是由于重开造成
-        role1_life_reward[role1_life_reward < 0] = 0
-        role2_life_reward = raw_env['role2_life'].diff(-self.operation_interval).fillna(0)
-        role2_life_reward[role2_life_reward < 0] = 0
-
-        # 这里避免新的一局开始，血量回满被误认为报酬,在后面加输赢reward的时候已修正
-        # life_reward[raw_env['time'].diff(1).fillna(1) > 0] = 0
-
-        # combo_reward = - raw_env['role1_combo_count'].diff(-self.operation_interval).fillna(0)
-
-        # 防守的收益
-        guard_reward = -raw_env['role1_guard_value'].diff(-self.operation_interval).fillna(0)
-        # 破防值回复不算
-        guard_reward = guard_reward.map(lambda x: x / 10 if x > 0 else 0)
-
-        # 值要在[-1，1]左右,reward_sum太小反而容易过估计
-        # 这里自己的生命更加重要,对方生命进行缩放
-        raw_env['raw_reward'] = role2_life_reward - role1_life_reward + guard_reward
-        raw_env['reward'] = raw_env['raw_reward'] / self.reward_scale_factor
+        # # 这里改成self.operation_interval步一操作，所以diff改成对应的偏移
+        # role1_life_reward = raw_env['role1_life'].diff(-self.operation_interval).fillna(0)
+        # # 这里是向后比较所以正常返回正值，负的是由于重开造成
+        # role1_life_reward[role1_life_reward < 0] = 0
+        # role2_life_reward = raw_env['role2_life'].diff(-self.operation_interval).fillna(0)
+        # role2_life_reward[role2_life_reward < 0] = 0
+        #
+        # # 这里避免新的一局开始，血量回满被误认为报酬,在后面加输赢reward的时候已修正
+        # # life_reward[raw_env['time'].diff(1).fillna(1) > 0] = 0
+        #
+        # # combo_reward = - raw_env['role1_combo_count'].diff(-self.operation_interval).fillna(0)
+        #
+        # # 防守的收益
+        # guard_reward = -raw_env['role1_guard_value'].diff(-self.operation_interval).fillna(0)
+        # # 破防值回复不算
+        # guard_reward = guard_reward.map(lambda x: x / 10 if x > 0 else 0)
+        #
+        # # 值要在[-1，1]左右,reward_sum太小反而容易过估计
+        # # 这里自己的生命更加重要,对方生命进行缩放
+        # raw_env['raw_reward'] = role2_life_reward - role1_life_reward + guard_reward
+        # raw_env['reward'] = raw_env['raw_reward'] / self.reward_scale_factor
 
         # 当前步的reward实际上是上一步的，我一直没有上移，这是个巨大的错误
         # raw_env['reward'] = raw_env['reward'].shift(-1).fillna(0)
         # 这个地方应该是错误的，因为diff就是当前和之后的差，就是当前action的reward，所以应该不需要再移动
+
+        raw_env['reward'] = 0
 
         '''
         # 根据胜负增加额外的报酬,pandas不允许切片或者搜索赋值，只能先这样
@@ -98,9 +100,10 @@ def raw_env_generate(self, folder, round_nums):
 # 这里把文件夹换成env_reward_generate生成的数据，避免过度耦合
 def train_env_generate(self, raw_env):
     train_env_data = self.empty_env()
-    train_index = []
 
-    for index in raw_env['reward'][raw_env['action'] != -1].index:
+    train_reward_reward = []
+    train_index = []
+    for index in raw_env[raw_env['action'] != -1].index:
         # 这里是loc取的数量是闭区间和python list不一样
         # guard_value不用，放在这里先补齐
         data = raw_env[input_colomns].loc[index - self.input_steps + 1:index].values
@@ -117,12 +120,22 @@ def train_env_generate(self, raw_env):
             split_data = self.raw_env_data_to_input(data, action)
             for i in range(len(split_data)):
                 train_env_data[i].append(split_data[i])
+
+            if train_index:
+                raw_env['reward'].loc[train_index[-1]] = get_reward(raw_env, train_index[-1], index)
             train_index.append(index)
+
     train_env_data = [np.array(env) for env in train_env_data]
     # 去掉原来的长度为1的sample数量值
     train_env_data = [env.reshape(env.shape[0], *env.shape[2:]) for env in train_env_data]
 
     return [train_env_data, train_index]
+
+
+def get_reward(env, idx1, idx2):
+    pre_value = env['role1_life'].loc[idx1] - env['role2_life'].loc[idx1]
+    cur_value = env['role1_life'].loc[idx2] - env['role2_life'].loc[idx2]
+    return cur_value - pre_value
 
 
 # 游戏运行时把原始环境输入，分割成模型能接受的输入，在具体的模型可以修改
@@ -131,11 +144,8 @@ def raw_env_data_to_input(self, raw_data, action):
     # 将能量，爆气，上次执行的动作都只输入最后一次，作为decode的query
     return (raw_data[:, :, 0], raw_data[:, :, 1], raw_data[:, :, 2], raw_data[:, :, 3],
             raw_data[:, :, 4:8], raw_data[:, :, 8], raw_data[:, :, 9],
-
-            # 注意action是上一步的，这里设置一个超长的步长，来保证只选取上一次的动作
-            action[:, self.action_begin_index::self.operation_interval])
-    # 如果使用common command采用这个
-    # action[:, :])
+            # 动作
+            action[:, -self.input_steps:])
 
 
 # 这里返回的list要和raw_env_data_to_input返回的大小一样
@@ -150,7 +160,7 @@ if __name__ == '__main__':
         build_stacked_rnn_model,
         raw_env_generate, train_env_generate,
         raw_env_data_to_input, empty_env]
-    model1 = PPO('iori', get_action_num('iori'), functions)
+    model1 = PPO('iori', get_action_num(), functions)
     # model1 = DuelingDQN('iori', get_action_num('iori'), functions)
     # critic 使用transformer时没有办法太好的收敛。。可能原因是中间传输通道的信息太窄。。
     # model1 = Critic('iori', get_action_num('iori'), functions)
@@ -161,7 +171,7 @@ if __name__ == '__main__':
     # model1.save_model()
     # t = model.operation_analysis(1)
 
-    raw_env = model1.raw_env_generate(15, [5])
+    raw_env = model1.raw_env_generate(1, [1])
     train_env, train_index = model1.train_env_generate(raw_env)
     train_reward, td_error, n_action = model1.train_reward_generate(raw_env, train_env, train_index)
     '''

@@ -92,12 +92,8 @@ class CommonAgent:
         # 训练时会重置
         self.e_greedy = 0
 
-        # 操作间隔时间步数
-        self.operation_interval = 1
-        # 由于action有间隔，输入序列第一个action所在的位置，方便提取action
-        self.action_begin_index = self.input_steps % self.operation_interval
         # 小于1在transformer中会出错
-        self.action_steps = self.input_steps // self.operation_interval
+        self.action_steps = self.input_steps
 
         # multi_steps 配合decay使网络趋向真实数据，但multi_steps加大会导致r波动大
         self.multi_steps = 1

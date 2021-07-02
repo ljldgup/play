@@ -6,8 +6,8 @@ import tensorflow as tf
 from tensorflow.keras import layers
 from tensorflow.python.keras import Model
 from tensorflow.python.keras.layers import concatenate
-from tensorflow.keras.optimizers import Adam
 from matplotlib import pyplot as plt
+from tensorflow.python.keras.optimizer_v2.adam import Adam
 
 from common.agent import CommonAgent, train_model_1by1
 from common.value_based_models import DoubleDQN
